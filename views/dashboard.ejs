@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard | D365 Job Hunter</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        D365 <span>Job Hunter</span>
+      </div>
+      <div class="nav-links">
+        <a href="/">Home</a>
+        <a href="/dashboard" class="active">Dashboard</a>
+      </div>
+    </header>
+
+    <% if (typeof successMsg !== 'undefined' && successMsg) { %>
+      <div class="alert alert-success"><%= successMsg %></div>
+    <% } %>
+    <% if (typeof errorMsg !== 'undefined' && errorMsg) { %>
+      <div class="alert alert-danger"><%= errorMsg %></div>
+    <% } %>
+
+    <div class="dashboard-header">
+      <div>
+        <h1 style="font-size: 2.2rem; font-weight: 700;">Campaign Dashboard</h1>
+        <p style="color: var(--text-secondary);">Manage candidates, review scraped positions, and track outbound pitches.</p>
+      </div>
+      <div style="display: flex; gap: 1rem;">
+        <a href="https://docs.google.com/spreadsheets/d/<%= googleSheetId %>" target="_blank" class="btn btn-secondary" style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>&#x1f4ca;</span> View Google Sheet Tracker
+        </a>
+        <form action="/jobs/scrape" method="POST" style="margin: 0;">
+          <button type="submit" class="btn btn-primary">Run Scraper Now</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <!-- Candidates List -->
+      <div class="card">
+        <h3 style="font-size: 1.4rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span>&#x1f465;</span> Registered Candidates (<%= candidates.length %>)
+        </h3>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Candidate Name</th>
+                <th>Current Role</th>
+                <th>Experience</th>
+                <th>Gmail OAuth</th>
+                <th>Resume</th>
+                <th>Emails Sent</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (candidates.length === 0) { %>
+                <tr>
+                  <td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                    No candidates registered yet. <a href="/register" style="color: var(--accent-cyan);">Register here</a>.
+                  </td>
+                </tr>
+              <% } else { %>
+                <% candidates.forEach(c => { %>
+                  <tr>
+                    <td style="font-weight: 600;"><%= c.name %></td>
+                    <td><%= c.role %></td>
+                    <td><%= c.experience %> Years</td>
+                    <td>
+                      <span class="status-badge <%= c.gmailConnected ? 'status-active' : 'status-error' %>">
+                        <%= c.gmailConnected ? 'Connected' : 'Disconnected' %>
+                      </span>
+                    </td>
+                    <td>
+                      <a href="/resumes/<%= c.id %>" style="color: var(--accent-cyan); text-decoration: none;" target="_blank">View File</a>
+                    </td>
+                    <td style="font-weight: 600;"><%= c.emailsSentCount || 0 %></td>
+                  </tr>
+                <% }) %>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 2rem;">
+        <!-- LinkedIn Post Parser -->
+        <div class="card">
+          <h3 style="font-size: 1.4rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>&#x1f517;</span> Quick Apply Recruiter Post
+          </h3>
+          <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 1.5rem;">
+            Paste text from a recruiter's LinkedIn post. AI will extract the HR email, match it to a candidate, and auto-submit the application.
+          </p>
+          <form action="/jobs/linkedin-parse" method="POST">
+            <div class="form-group">
+              <label for="candidateSelect">Apply as Candidate</label>
+              <select name="candidateId" id="candidateSelect" class="form-control" required>
+                <option value="" disabled selected>Choose Candidate...</option>
+                <% candidates.forEach(c => { %>
+                  <option value="<%= c.id %>"><%= c.name %> (<%= c.role %> - <%= c.experience %> yrs)</option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="postText">Recruiter Post Text</label>
+              <textarea name="postText" id="postText" class="form-control paste-box" placeholder="Hiring Dynamics 365 Developer. Need 5 years experience. Contact hr@acme.com" required></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
+              Parse Post & Send Email
+            </button>
+          </form>
+        </div>
+
+        <!-- System Information -->
+        <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <h3 style="font-size: 1.4rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+              <span>&#x2699;</span> Campaign Controls & Logs
+            </h3>
+            <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 1.5rem;">
+              The job hunter executes automatically every day at <strong>9:00 AM IST</strong>.
+            </p>
+            <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 10px; font-family: monospace; font-size: 0.85rem; height: 160px; overflow-y: auto; border: 1px solid var(--glass-border);">
+              <div style="color: var(--accent-cyan);">[INFO] Campaign cron scheduled for 9:00 AM IST daily.</div>
+              <% if (logs && logs.length > 0) { %>
+                <% logs.forEach(log => { %>
+                  <div><%= log %></div>
+                <% }) %>
+              <% } else { %>
+                <div style="color: var(--text-secondary);">[INFO] Waiting for campaign logs...</div>
+              <% } %>
+            </div>
+          </div>
+          <div style="margin-top: 1.5rem; text-align: center;">
+            <p style="font-size: 0.85rem; color: var(--text-secondary);">
+              Ensure Google Sheet ID matches: <strong><%= googleSheetId %></strong>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      &copy; 2026 D365 Job Hunter Campaign. All Rights Reserved.
+    </footer>
+  </div>
+</body>
+</html>

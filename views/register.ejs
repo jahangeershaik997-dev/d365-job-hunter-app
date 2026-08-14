@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register | D365 Job Hunter</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        D365 <span>Job Hunter</span>
+      </div>
+      <div class="nav-links">
+        <a href="/">Home</a>
+        <a href="/dashboard">Dashboard</a>
+      </div>
+    </header>
+
+    <main style="max-width: 600px; margin: 0 auto;">
+      <div class="card">
+        <h2 style="font-size: 2rem; margin-bottom: 0.5rem; text-align: center;">Onboard Candidate</h2>
+        <p style="color: var(--text-secondary); text-align: center; margin-bottom: 2rem;">
+          Provide your professional details and authorize Gmail to start applying.
+        </p>
+
+        <% if (error) { %>
+          <div class="alert alert-danger"><%= error %></div>
+        <% } %>
+
+        <form action="/register" method="POST" enctype="multipart/form-data">
+          <div class="form-group">
+            <label for="name">Full Name</label>
+            <input type="text" id="name" name="name" class="form-control" placeholder="e.g. John Doe" required>
+          </div>
+
+          <div class="form-group">
+            <label for="role">Current Role</label>
+            <input type="text" id="role" name="role" class="form-control" placeholder="e.g. Dynamics 365 Consultant" required>
+          </div>
+
+          <div class="form-group">
+            <label for="experience">Years of Experience</label>
+            <select id="experience" name="experience" class="form-control" required>
+              <option value="" disabled selected>Select experience</option>
+              <option value="3">3 Years</option>
+              <option value="4">4 Years</option>
+              <option value="5">5 Years</option>
+              <option value="6">6 Years</option>
+              <option value="7">7 Years (Senior)</option>
+              <option value="8">8+ Years (Lead / Architect)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 2rem;">
+            <label>Upload Resume (PDF or DOCX)</label>
+            <div class="file-upload-wrapper">
+              <div class="file-upload-icon">&#x1f4c4;</div>
+              <p style="margin-bottom: 0.5rem; font-weight: 500;">Click to upload or drag & drop</p>
+              <p style="font-size: 0.85rem; color: var(--text-secondary);">Only PDF or DOCX allowed</p>
+              <input type="file" name="resume" accept=".pdf,.docx" required onchange="updateFileName(this)">
+              <div id="file-name" style="margin-top: 0.5rem; font-weight: 600; color: var(--accent-cyan);"></div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.8rem;">
+            Continue with Google OAuth Authentication
+          </button>
+        </form>
+      </div>
+    </main>
+
+    <footer>
+      &copy; 2026 D365 Job Hunter Campaign. All Rights Reserved.
+    </footer>
+  </div>
+
+  <script>
+    function updateFileName(input) {
+      const fileNameDiv = document.getElementById('file-name');
+      if (input.files && input.files[0]) {
+        fileNameDiv.textContent = 'Selected: ' + input.files[0].name;
+      } else {
+        fileNameDiv.textContent = '';
+      }
+    }
+  </script>
+</body>
+</html>

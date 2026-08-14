@@ -1,0 +1,30 @@
+{
+  "name": "d365-job-hunter-app",
+  "version": "1.0.0",
+  "description": "Automated Dynamics 365 CRM Job Hunter & Application Sender",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.9",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "google-auth-library": "^9.7.0",
+    "googleapis": "^134.0.0",
+    "groq-sdk": "^0.3.3",
+    "mammoth": "^1.7.2",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

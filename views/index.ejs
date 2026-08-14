@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D365 Job Hunter | Automated Job Application System</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        D365 <span>Job Hunter</span>
+      </div>
+      <div class="nav-links">
+        <a href="/" class="active">Home</a>
+        <a href="/dashboard">Dashboard</a>
+      </div>
+    </header>
+
+    <main class="hero">
+      <h1>Automate your Dynamics 365<br><span>Job Search with AI</span></h1>
+      <p>
+        Register as a candidate, upload your resume, and let D365 Job Hunter handle the rest. 
+        We automatically scrape Dynamics 365, Dynamics CRM, and D365 CRM jobs, locate HR emails via Apollo.io, 
+        write highly personalized pitches via Groq AI, and send them directly from your Gmail.
+      </p>
+
+      <div class="stats-grid">
+        <div class="card stat-card">
+          <div class="stat-value"><%= stats.candidatesCount %></div>
+          <div class="stat-label">Candidates Registered</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value"><%= stats.emailsSentToday %></div>
+          <div class="stat-label">Emails Sent Today</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value"><%= stats.jobsScraped %></div>
+          <div class="stat-label">D365 Jobs Scraped</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 3rem;">
+        <a href="/register" class="btn btn-primary" style="font-size: 1.2rem; padding: 1rem 2.5rem;">
+          Get Started - Join Campaign
+        </a>
+      </div>
+    </main>
+
+    <footer>
+      &copy; 2026 D365 Job Hunter Campaign. All Rights Reserved.
+    </footer>
+  </div>
+</body>
+</html>
