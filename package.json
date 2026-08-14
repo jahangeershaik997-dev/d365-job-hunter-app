@@ -1,0 +1,16 @@
+{
+  "name": "d365-job-hunter",
+  "version": "1.0.0",
+  "description": "D365 Job Application Automation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "ejs": "^3.1.10",
+    "express": "^4.22.2",
+    "passport": "^0.6.0",
+    "passport-google-oauth20": "^2.0.0"
+  }
+}
