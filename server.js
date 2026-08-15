@@ -118,6 +118,43 @@ app.get("/auth/callback", passport.authenticate("google", {
 app.get("/logout", (req, res) => {
   req.logout(() => res.redirect("/"));
 });
+// ADD THESE ROUTES TO server.js
+
+const LINKEDIN_BIN_ID_SRV = process.env.LINKEDIN_BIN_ID;
+const JSONBIN_MK_SRV = process.env.JSONBIN_MASTER_KEY;
+
+async function getLinkedInPostsSrv() {
+  try {
+    if (!LINKEDIN_BIN_ID_SRV) return [];
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID_SRV}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_MK_SRV }
+    });
+    const data = await res.json();
+    return Array.isArray(data.record) ? data.record.filter(p => !p.init) : [];
+  } catch(e) { return []; }
+}
+
+app.get("/linkedin", async (req, res) => {
+  const posts = await getLinkedInPostsSrv();
+  res.render("linkedin", { user: req.user, posts, success: req.query.success || false });
+});
+
+// INSTANT TRIGGER - calls the API internally
+app.post("/linkedin/submit", async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Not logged in" });
+  
+  try {
+    const triggerRes = await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'https://d365-job-hunter-app.vercel.app'}/api/trigger-emails`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body)
+    });
+    const data = await triggerRes.json();
+    res.json(data);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 if (require.main === module) {
   app.listen(process.env.PORT || 3000, () => {

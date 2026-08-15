@@ -18,21 +18,36 @@
     .form-group { margin-bottom: 20px; }
     label { display: block; font-size: 14px; color: #8899aa; margin-bottom: 8px; }
     input, textarea { width: 100%; padding: 12px 15px; background: #0f1923; border: 1px solid #2a3a4a; border-radius: 8px; color: #fff; font-size: 15px; }
-    input:focus, textarea:focus { outline: none; border-color: #00d4ff; }
-    textarea { height: 150px; resize: vertical; }
+    textarea { height: 180px; resize: vertical; }
     .btn { width: 100%; padding: 15px; background: #00d4ff; color: #000; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; }
     .btn:hover { background: #00b8d9; }
-    .success { background: #00ff8822; border: 1px solid #00ff88; border-radius: 8px; padding: 15px; margin-bottom: 20px; color: #00ff88; }
-    .posts-list { display: grid; gap: 15px; }
-    .post-item { background: #0f1923; border-radius: 8px; padding: 15px 20px; border-left: 3px solid #00d4ff; }
-    .post-company { font-weight: 700; color: #00d4ff; }
+    .btn:disabled { background: #334455; color: #8899aa; cursor: not-allowed; }
+    .status-box { border-radius: 8px; padding: 15px 20px; margin-bottom: 20px; display: none; }
+    .status-sending { background: #00d4ff22; border: 1px solid #00d4ff; color: #00d4ff; }
+    .status-success { background: #00ff8822; border: 1px solid #00ff88; color: #00ff88; }
+    .status-error { background: #ff444422; border: 1px solid #ff4444; color: #ff4444; }
+    .results-box { background: #0f1923; border-radius: 8px; padding: 20px; margin-top: 15px; display: none; }
+    .result-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #1a2a3a; font-size: 14px; }
+    .sent { color: #00ff88; }
+    .failed { color: #ff4444; }
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid #00d4ff33; border-top: 3px solid #00d4ff; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 10px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .tab-group { display: flex; gap: 10px; margin-bottom: 20px; }
+    .tab { padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; border: 1px solid #2a3a4a; background: #0f1923; color: #8899aa; }
+    .tab.active { background: #00d4ff; color: #000; border-color: #00d4ff; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .upload-area { border: 2px dashed #2a3a4a; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
+    .upload-area:hover { border-color: #00d4ff; }
+    .upload-icon { font-size: 40px; margin-bottom: 10px; }
+    .posts-list { display: grid; gap: 10px; }
+    .post-item { background: #0f1923; border-radius: 8px; padding: 15px; border-left: 3px solid #00d4ff; }
+    .post-company { font-weight: 700; color: #00d4ff; font-size: 15px; }
     .post-text { font-size: 13px; color: #8899aa; margin-top: 5px; }
-    .post-meta { font-size: 12px; color: #556677; margin-top: 8px; }
-    .badge { padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; background: #00d4ff22; color: #00d4ff; margin-left: 8px; }
-    .how-to { background: #0f1923; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-    .step { display: flex; gap: 15px; margin-bottom: 12px; align-items: flex-start; }
-    .step-num { background: #00d4ff; color: #000; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; flex-shrink: 0; }
-    .step-text { font-size: 14px; color: #ccc; padding-top: 4px; }
+    .post-meta { font-size: 12px; color: #445566; margin-top: 8px; }
+    .badge { padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+    .badge-sent { background: #00ff8822; color: #00ff88; }
+    .badge-pending { background: #ffaa0022; color: #ffaa00; }
   </style>
 </head>
 <body>
@@ -40,83 +55,95 @@
     <a href="/" class="logo">🚀 D365 Job Hunter</a>
     <div class="nav-links">
       <a href="/dashboard">Dashboard</a>
-      <a href="/linkedin">LinkedIn Posts</a>
-      <% if (user) { %><a href="/logout">Logout</a><% } %>
+      <a href="/linkedin">Post Jobs</a>
+      <% if (user) { %><a href="/logout">Logout (<%= user.displayName %>)</a><% } else { %><a href="/auth/google">Login</a><% } %>
     </div>
   </div>
 
   <div class="container">
-    <h1>📱 LinkedIn Recruiter Posts</h1>
-    <p class="subtitle">Paste recruiter posts here → System sends applications automatically!</p>
+    <h1>📱 Post a Job → Instant Email Blast!</h1>
+    <p class="subtitle">Paste a LinkedIn post, JD, or upload an image → Emails sent immediately from ALL candidates! 🚀</p>
 
-    <% if (success) { %>
-      <div class="success">✅ Post saved! Emails will be sent in the next run.</div>
-    <% } %>
-
-    <div class="card">
-      <h2>How It Works</h2>
-      <div class="how-to">
-        <div class="step">
-          <div class="step-num">1</div>
-          <div class="step-text">See a recruiter post on LinkedIn about a D365 job</div>
-        </div>
-        <div class="step">
-          <div class="step-num">2</div>
-          <div class="step-text">Copy the full post text</div>
-        </div>
-        <div class="step">
-          <div class="step-num">3</div>
-          <div class="step-text">Paste it below with recruiter's email (if visible)</div>
-        </div>
-        <div class="step">
-          <div class="step-num">4</div>
-          <div class="step-text">AI reads the post, writes personalized email, sends from each candidate's Gmail with resume attached!</div>
-        </div>
-      </div>
-    </div>
+    <div id="statusBox" class="status-box"></div>
+    <div id="resultsBox" class="results-box"></div>
 
     <% if (user) { %>
     <div class="card">
-      <h2>➕ Add LinkedIn Post</h2>
-      <form action="/linkedin" method="POST">
+      <h2>➕ Add Job Post</h2>
+
+      <div class="tab-group">
+        <div class="tab active" onclick="switchTab('text')">📝 Paste Text/JD</div>
+        <div class="tab" onclick="switchTab('image')">🖼️ Upload Image</div>
+      </div>
+
+      <!-- TEXT TAB -->
+      <div id="tab-text" class="tab-content active">
         <div class="form-group">
-          <label>Recruiter's Email (if visible in post)</label>
-          <input type="email" name="email" placeholder="e.g. john.smith@capgemini.com">
+          <label>Recruiter Email (if visible in post)</label>
+          <input type="email" id="emailInput" placeholder="e.g. john.smith@capgemini.com (optional)">
         </div>
         <div class="form-group">
-          <label>LinkedIn Post Text *</label>
-          <textarea name="text" placeholder="Paste the full LinkedIn recruiter post here..." required></textarea>
+          <label>Paste LinkedIn Post / Job Description *</label>
+          <textarea id="textInput" placeholder="Paste the full LinkedIn post or job description here...&#10;&#10;Example:&#10;We are hiring Senior D365 CRM Developer at Capgemini Hyderabad...&#10;Skills: C#.NET, Power Platform, Azure...&#10;Contact: john.smith@capgemini.com"></textarea>
         </div>
         <div class="form-group">
           <label>Post URL (optional)</label>
-          <input type="url" name="url" placeholder="https://linkedin.com/posts/...">
+          <input type="url" id="urlInput" placeholder="https://linkedin.com/posts/...">
         </div>
-        <button type="submit" class="btn">🚀 Save & Queue for Sending</button>
-      </form>
+        <button class="btn" id="submitBtn" onclick="submitPost()">
+          🚀 Send Emails to All Candidates NOW!
+        </button>
+      </div>
+
+      <!-- IMAGE TAB -->
+      <div id="tab-image" class="tab-content">
+        <div class="form-group">
+          <label>Recruiter Email (if visible in image)</label>
+          <input type="email" id="imageEmailInput" placeholder="e.g. john.smith@capgemini.com (optional)">
+        </div>
+        <div class="form-group">
+          <label>Upload Screenshot/Image of Job Post</label>
+          <div class="upload-area" onclick="document.getElementById('imageFile').click()">
+            <div class="upload-icon">🖼️</div>
+            <div id="uploadText">Click to upload LinkedIn screenshot or job post image</div>
+            <div style="font-size:12px;color:#556677;margin-top:8px">Supports: JPG, PNG, WEBP</div>
+            <input type="file" id="imageFile" accept="image/*" style="display:none" onchange="previewImage(this)">
+          </div>
+          <div id="imagePreview" style="margin-top:10px;display:none">
+            <img id="previewImg" style="max-width:100%;border-radius:8px;max-height:300px">
+          </div>
+        </div>
+        <button class="btn" id="imageSubmitBtn" onclick="submitImage()">
+          🚀 Send Emails to All Candidates NOW!
+        </button>
+      </div>
     </div>
     <% } else { %>
-    <div class="card" style="text-align:center">
-      <p style="color:#8899aa;margin-bottom:20px">Please login to add LinkedIn posts</p>
+    <div class="card" style="text-align:center;padding:40px">
+      <div style="font-size:50px;margin-bottom:15px">🔐</div>
+      <p style="color:#8899aa;margin-bottom:20px">Please login to post jobs and trigger emails</p>
       <a href="/auth/google" style="padding:12px 30px;background:#00d4ff;color:#000;border-radius:8px;text-decoration:none;font-weight:700">Login with Google</a>
     </div>
     <% } %>
 
     <div class="card">
-      <h2>📋 Saved Posts (<%= posts.length %>)</h2>
+      <h2>📋 Recent Posts (<%= posts.length %>)</h2>
       <% if (posts.length === 0) { %>
-        <p style="color:#8899aa">No posts added yet. Add your first LinkedIn post above!</p>
+        <p style="color:#8899aa">No posts yet. Add your first job post above!</p>
       <% } else { %>
         <div class="posts-list">
-          <% posts.forEach(post => { %>
+          <% posts.slice(0, 10).forEach(post => { %>
             <div class="post-item">
               <div class="post-company">
-                <%= post.company || 'Parsing...' %>
-                <span class="badge"><%= post.processed ? '✅ Sent' : '⏳ Pending' %></span>
+                <%= post.company || '⏳ Processing...' %>
+                <span class="badge <%= post.emailsSent ? 'badge-sent' : 'badge-pending' %>">
+                  <%= post.emailsSent ? '✅ ' + post.emailsSent + ' emails sent' : '⏳ Pending' %>
+                </span>
               </div>
-              <div class="post-text"><%= post.text ? post.text.substring(0, 150) + '...' : '' %></div>
+              <div class="post-text"><%= (post.text || '').substring(0, 150) %>...</div>
               <div class="post-meta">
-                Added: <%= new Date(post.addedAt).toLocaleDateString('en-IN') %>
-                <% if (post.email) { %> · Email: <%= post.email %><% } %>
+                Added: <%= new Date(post.addedAt).toLocaleString('en-IN') %>
+                <% if (post.hrEmail) { %> · HR: <%= post.hrEmail %><% } %>
               </div>
             </div>
           <% }); %>
@@ -124,5 +151,130 @@
       <% } %>
     </div>
   </div>
+
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    function previewImage(input) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          document.getElementById('previewImg').src = e.target.result;
+          document.getElementById('imagePreview').style.display = 'block';
+          document.getElementById('uploadText').textContent = '✅ ' + input.files[0].name;
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+
+    function showStatus(type, message) {
+      const box = document.getElementById('statusBox');
+      box.className = 'status-box status-' + type;
+      box.innerHTML = message;
+      box.style.display = 'block';
+    }
+
+    function showResults(results) {
+      const box = document.getElementById('resultsBox');
+      if (!results || results.length === 0) return;
+      
+      let html = '<h3 style="color:#00d4ff;margin-bottom:15px">📧 Email Results:</h3>';
+      results.forEach(r => {
+        html += `<div class="result-row">
+          <span>${r.candidate} → ${r.company}</span>
+          <span>${r.sent ? '<span class="sent">✅ Sent</span>' : '<span class="failed">❌ Failed</span>'}</span>
+        </div>`;
+      });
+      box.innerHTML = html;
+      box.style.display = 'block';
+    }
+
+    async function submitPost() {
+      const text = document.getElementById('textInput').value.trim();
+      if (!text) { showStatus('error', '⚠️ Please paste a job post first!'); return; }
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Sending emails...';
+      showStatus('sending', '<span class="spinner"></span> AI is reading the post and sending emails to all candidates...');
+      document.getElementById('resultsBox').style.display = 'none';
+
+      try {
+        const res = await fetch('/linkedin/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            email: document.getElementById('emailInput').value,
+            url: document.getElementById('urlInput').value,
+            type: 'text'
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          showStatus('success', `✅ Done! ${data.emailsSent} emails sent successfully from all candidates!`);
+          showResults(data.results);
+          document.getElementById('textInput').value = '';
+          document.getElementById('emailInput').value = '';
+          setTimeout(() => location.reload(), 3000);
+        } else {
+          showStatus('error', '❌ Error: ' + (data.error || 'Something went wrong'));
+        }
+      } catch(e) {
+        showStatus('error', '❌ Network error: ' + e.message);
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '🚀 Send Emails to All Candidates NOW!';
+    }
+
+    async function submitImage() {
+      const file = document.getElementById('imageFile').files[0];
+      if (!file) { showStatus('error', '⚠️ Please upload an image first!'); return; }
+
+      const btn = document.getElementById('imageSubmitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Reading image and sending emails...';
+      showStatus('sending', '<span class="spinner"></span> AI is reading the image and sending emails to all candidates...');
+
+      const reader = new FileReader();
+      reader.onload = async e => {
+        try {
+          const res = await fetch('/linkedin/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: e.target.result,
+              email: document.getElementById('imageEmailInput').value,
+              type: 'image'
+            })
+          });
+
+          const data = await res.json();
+
+          if (data.success) {
+            showStatus('success', `✅ Done! ${data.emailsSent} emails sent successfully!`);
+            showResults(data.results);
+            setTimeout(() => location.reload(), 3000);
+          } else {
+            showStatus('error', '❌ Error: ' + (data.error || 'Something went wrong'));
+          }
+        } catch(e) {
+          showStatus('error', '❌ Error: ' + e.message);
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = '🚀 Send Emails to All Candidates NOW!';
+      };
+      reader.readAsDataURL(file);
+    }
+  </script>
 </body>
 </html>
