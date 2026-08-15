@@ -176,24 +176,42 @@ async function updateSheet(candidate, job, hrEmail, subject, sent, source) {
       process.env.GOOGLE_CLIENT_SECRET,
       "https://d365-job-hunter-app.vercel.app/auth/callback"
     );
-    oauth2Client.setCredentials({ refresh_token: SHEET_REFRESH_TOKEN });
+    oauth2Client.setCredentials({
+      refresh_token: process.env.SHEET_REFRESH_TOKEN
+    });
+
+    // Get fresh access token explicitly
+    const tokenResponse = await oauth2Client.getAccessToken();
+    console.log("Sheet token refreshed:", !!tokenResponse.token);
+
     const sheets = google.sheets({ version: "v4", auth: oauth2Client });
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
+
+    const appendResponse = await sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
       range: "Sheet1!A:K",
-      valueInputOption: "RAW",
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
       requestBody: {
         values: [[
-          job.title, job.company, job.location, job.url || "",
-          source || job.source, hrEmail, candidate.name,
-          subject, sent ? "Yes" : "No",
-          new Date().toLocaleDateString("en-IN"), "Applied"
+          job.title || "",
+          job.company || "",
+          job.location || "",
+          job.url || "",
+          source || job.source || "",
+          hrEmail || "",
+          candidate.name || "",
+          subject || "",
+          sent ? "Yes" : "No",
+          new Date().toLocaleDateString("en-IN"),
+          "Applied"
         ]]
       }
     });
-    console.log(`📊 Sheet updated: ${candidate.name} → ${job.company}`);
+
+    console.log(`📊 Sheet updated! Row: ${appendResponse.data.updates.updatedRange}`);
   } catch(e) {
-    console.log("Sheet update failed:", e.message);
+    console.log("Sheet update FAILED:", e.message);
+    console.log("Sheet error details:", JSON.stringify(e.errors || {}));
   }
 }
 

@@ -191,7 +191,7 @@ app.get("/dashboard", async (req, res) => {
 });
 
 app.get("/auth/google", passport.authenticate("google", {
-  scope: ["profile", "email", "https://www.googleapis.com/auth/gmail.send"],
+  scope: ["profile", "email", "https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/spreadsheets"],
   accessType: "offline",
   prompt: "consent"
 }));
