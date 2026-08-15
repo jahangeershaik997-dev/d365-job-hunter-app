@@ -28,11 +28,8 @@ function isRealPersonEmail(email) {
   for (const part of parts) {
     if (blacklist.includes(part)) return false;
   }
-  if (!local.includes(".")) return false;
-  for (const part of parts) {
-    if (part.length < 2) return false;
-    if (!/^[a-z]+$/.test(part)) return false;
-  }
+  if (!/^[a-z][a-z.]+[a-z]$/.test(local)) return false;
+  if (local.length < 3) return false;
   return true;
 }
 
