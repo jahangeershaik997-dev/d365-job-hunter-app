@@ -92,8 +92,19 @@ app.post("/register", upload.single("resume"), async (req, res) => {
   let resumeText = "";
   let parsedDetails = {};
   try {
-    const textContent = req.file.buffer.toString("utf-8");
-    resumeText = textContent.substring(0, 3000);
+    // Extract text based on file type
+    const fileExt = req.file.originalname.toLowerCase();
+    if (fileExt.endsWith('.pdf')) {
+      const pdfParse = require('pdf-parse');
+      const pdfData = await pdfParse(req.file.buffer);
+      resumeText = pdfData.text.substring(0, 3000);
+    } else if (fileExt.endsWith('.docx')) {
+      const mammoth = require('mammoth');
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      resumeText = result.value.substring(0, 3000);
+    } else {
+      resumeText = req.file.buffer.toString("utf-8").substring(0, 3000);
+    }
 
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
     const response = await groq.chat.completions.create({
