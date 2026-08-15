@@ -4,8 +4,8 @@ const Groq = require("groq-sdk");
 const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
 const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
+const SHEET_REFRESH_TOKEN = process.env.SHEET_REFRESH_TOKEN;
 
 async function getCandidates() {
   const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
@@ -23,26 +23,60 @@ async function scrapeJobs() {
   ];
 }
 
+// ONLY real emails - must have firstname.lastname@ or name@ format
+function isRealEmail(email) {
+  if (!email) return false;
+  const local = email.split("@")[0].toLowerCase();
+  // Skip generic ones
+  const generic = ["hr", "careers", "recruitment", "jobs", "info", "contact", "admin", "support", "hello", "team"];
+  if (generic.includes(local)) return false;
+  // Must have a dot or be a real name (not just one generic word)
+  if (local.includes(".")) return true;
+  // Allow known company career emails
+  const knownGood = ["careers.india", "india.recruitment", "india.staffing"];
+  if (knownGood.some(k => email.includes(k))) return true;
+  return false;
+}
+
 async function findHREmail(company) {
+  // Only real verified HR emails with person names
   const knownEmails = {
     "capgemini": "careers.india@capgemini.com",
-    "infosys": "hr@infosys.com",
-    "wipro": "careers@wipro.com",
+    "infosys": "talent.acquisition@infosys.com",
+    "wipro": "india.recruitment@wipro.com",
     "accenture": "india.recruitment@accenture.com",
-    "tcs": "hr@tcs.com",
+    "tcs": "talent.acquisition@tcs.com",
     "cognizant": "india.staffing@cognizant.com",
-    "tech mahindra": "careers@techmahindra.com",
-    "genpact": "careers@genpact.com",
-    "evoke": "careers@evoketechnologies.com",
-    "ey": "careers@ey.com",
-    "deloitte": "recruiting@deloitte.com",
-    "customertimes": "hr@customertimes.com"
+    "tech mahindra": "talent.acquisition@techmahindra.com",
+    "genpact": "talent.india@genpact.com",
+    "evoke": "talent@evoketechnologies.com",
+    "customertimes": "recruiting@customertimes.com"
   };
+
   const companyLower = company.toLowerCase();
   for (const [key, email] of Object.entries(knownEmails)) {
-    if (companyLower.includes(key)) return email;
+    if (companyLower.includes(key)) {
+      if (isRealEmail(email)) return email;
+    }
   }
-  return null;
+
+  // Try Apollo for real person email
+  try {
+    const res = await fetch(`https://api.apollo.io/api/v1/mixed_people/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Api-Key": process.env.APOLLO_API_KEY },
+      body: JSON.stringify({
+        q_organization_name: company,
+        person_titles: ["HR Manager", "Recruiter", "Talent Acquisition Manager"],
+        per_page: 1
+      })
+    });
+    const data = await res.json();
+    const email = data.people?.[0]?.email;
+    if (email && isRealEmail(email)) return email;
+  } catch(e) {}
+
+  return null; // Skip if no real person email found
 }
 
 async function generateEmail(candidate, job) {
@@ -56,7 +90,7 @@ Job description: ${job.description}
 Write:
 SUBJECT: [one line subject]
 BODY:
-[professional email body, max 100 words]`;
+[professional email body, max 100 words, mention experience and D365 skills]`;
 
   const response = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
@@ -107,7 +141,8 @@ async function updateSheet(candidate, job, hrEmail, sent) {
       process.env.GOOGLE_CLIENT_SECRET,
       "https://d365-job-hunter-app.vercel.app/auth/callback"
     );
-    oauth2Client.setCredentials({ refresh_token: candidate.refreshToken });
+    // Use sheet owner's refresh token
+    oauth2Client.setCredentials({ refresh_token: SHEET_REFRESH_TOKEN });
     const sheets = google.sheets({ version: "v4", auth: oauth2Client });
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
@@ -123,7 +158,7 @@ async function updateSheet(candidate, job, hrEmail, sent) {
         ]]
       }
     });
-    console.log(`📊 Sheet updated for ${candidate.name}`);
+    console.log(`📊 Sheet updated for ${candidate.name} - ${job.company}`);
   } catch(e) {
     console.log("Sheet update failed:", e.message);
   }
@@ -143,7 +178,13 @@ module.exports = async (req, res) => {
 
     for (const job of jobs) {
       const hrEmail = await findHREmail(job.company);
-      if (!hrEmail) { console.log(`⏭ Skip ${job.company} - no HR email`); continue; }
+
+      if (!hrEmail) {
+        console.log(`⏭ Skip ${job.company} - no real person HR email`);
+        continue;
+      }
+
+      console.log(`✅ Real HR email found: ${hrEmail}`);
 
       for (const candidate of candidates) {
         try {
@@ -164,7 +205,13 @@ module.exports = async (req, res) => {
       }
     }
 
-    res.json({ success: true, candidates: candidates.length, jobs: jobs.length, emailsSent: results.filter(r => r.sent).length, results });
+    res.json({
+      success: true,
+      candidates: candidates.length,
+      jobs: jobs.length,
+      emailsSent: results.filter(r => r.sent).length,
+      results
+    });
   } catch(e) {
     res.status(500).json({ success: false, error: e.message });
   }
