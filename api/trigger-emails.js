@@ -244,22 +244,16 @@ async function sendGmail(candidate, to, subject, body) {
   console.log(`✅ Sent from ${candidate.email} to ${to} ${resumeBuffer ? '(with resume)' : '(no resume)'}`);
 }
 
-async function updateSheet(candidate, job, hrEmail, subject, sent) {
+async function updateSheet(candidate, job, hrEmail, subject, sent, source) {
   try {
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      "https://d365-job-hunter-app.vercel.app/auth/callback"
-    );
-    oauth2Client.setCredentials({
-      refresh_token: process.env.SHEET_REFRESH_TOKEN
+    const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+
+    const auth = new google.auth.GoogleAuth({
+      credentials: serviceAccount,
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"]
     });
 
-    // Get fresh access token explicitly
-    const tokenResponse = await oauth2Client.getAccessToken();
-    console.log("Sheet token refreshed:", !!tokenResponse.token);
-
-    const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+    const sheets = google.sheets({ version: "v4", auth });
 
     const appendResponse = await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
@@ -272,7 +266,7 @@ async function updateSheet(candidate, job, hrEmail, subject, sent) {
           job.company || "",
           job.location || "",
           job.url || "",
-          "LinkedIn Post",
+          source || "LinkedIn Post",
           hrEmail || "",
           candidate.name || "",
           subject || "",
@@ -283,10 +277,9 @@ async function updateSheet(candidate, job, hrEmail, subject, sent) {
       }
     });
 
-    console.log(`📊 Sheet updated! Row: ${appendResponse.data.updates.updatedRange}`);
+    console.log(`📊 Sheet updated! ${candidate.name} → ${job.company}`);
   } catch(e) {
     console.log("Sheet update FAILED:", e.message);
-    console.log("Sheet error details:", JSON.stringify(e.errors || {}));
   }
 }
 
