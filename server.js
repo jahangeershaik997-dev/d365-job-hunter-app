@@ -4,32 +4,31 @@ const session = require("express-session");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const multer = require("multer");
-const fs = require("fs");
 
 const app = express();
 
-// Setup
+const JSONBIN_BIN_ID = "6a7fe014f5f4af5e29189def";
+const JSONBIN_MASTER_KEY = "$2a$10$mOTOfSBdMCPsMoeb7FIaVubVgsRJqsgyheEbJc2nZ6aZ5p3cKzVJa";
+
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Session
 app.use(session({
   secret: process.env.SESSION_SECRET || "d365secret",
   resave: false,
   saveUninitialized: false
 }));
 
-// Passport
 app.use(passport.initialize());
 app.use(passport.session());
 
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.CALLBACK_URL || "/auth/callback"
+  callbackURL: "https://d365-job-hunter-app.vercel.app/auth/callback"
 }, (accessToken, refreshToken, profile, done) => {
   profile.accessToken = accessToken;
   return done(null, profile);
@@ -38,34 +37,38 @@ passport.use(new GoogleStrategy({
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
-// File upload
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "/tmp"),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
-});
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
-// Data helpers
-function getCandidates() {
+async function getCandidates() {
   try {
-    const p = path.join(__dirname, "data", "candidates.json");
-    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8"));
-  } catch(e) {}
-  return [];
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
+    });
+    const data = await res.json();
+    const records = data.record;
+    return Array.isArray(records) ? records.filter(c => !c.init) : [];
+  } catch(e) {
+    return [];
+  }
 }
 
-function saveCandidate(candidate) {
-  const candidates = getCandidates();
+async function saveCandidate(candidate) {
+  const candidates = await getCandidates();
   const existing = candidates.findIndex(c => c.email === candidate.email);
   if (existing >= 0) candidates[existing] = candidate;
   else candidates.push(candidate);
-  const p = path.join(__dirname, "data", "candidates.json");
-  fs.writeFileSync(p, JSON.stringify(candidates, null, 2));
+  await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Master-Key": JSONBIN_MASTER_KEY
+    },
+    body: JSON.stringify(candidates)
+  });
 }
 
-// Routes
-app.get("/", (req, res) => {
-  const candidates = getCandidates();
+app.get("/", async (req, res) => {
+  const candidates = await getCandidates();
   res.render("index", { user: req.user, candidateCount: candidates.length });
 });
 
@@ -73,26 +76,25 @@ app.get("/register", (req, res) => {
   res.render("register", { user: req.user, error: req.query.error || null });
 });
 
-app.post("/register", upload.single("resume"), (req, res) => {
+app.post("/register", upload.single("resume"), async (req, res) => {
   if (!req.user) return res.redirect("/auth/google");
   if (!req.file) return res.redirect("/register?error=Please upload your resume");
 
-  saveCandidate({
+  await saveCandidate({
     id: req.user.id,
     name: req.body.name || req.user.displayName,
     email: req.user.emails[0].value,
     experience: req.body.experience,
     role: req.body.role,
-    resumeFile: req.file.filename,
     registeredAt: new Date().toISOString()
   });
 
   res.redirect("/dashboard");
 });
 
-app.get("/dashboard", (req, res) => {
+app.get("/dashboard", async (req, res) => {
   if (!req.user) return res.redirect("/");
-  const candidates = getCandidates();
+  const candidates = await getCandidates();
   const me = candidates.find(c => c.email === req.user.emails[0].value);
   res.render("dashboard", { user: req.user, candidate: me, candidates });
 });
@@ -115,7 +117,7 @@ app.get("/logout", (req, res) => {
 
 if (require.main === module) {
   app.listen(process.env.PORT || 3000, () => {
-    console.log("D365 Job Hunter running on port " + (process.env.PORT || 3000));
+    console.log("Server running on port " + (process.env.PORT || 3000));
   });
 }
 
