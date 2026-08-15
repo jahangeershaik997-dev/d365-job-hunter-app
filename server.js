@@ -4,6 +4,7 @@ const session = require("express-session");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const multer = require("multer");
+const Groq = require("groq-sdk");
 
 const app = express();
 
@@ -82,6 +83,45 @@ app.post("/register", upload.single("resume"), async (req, res) => {
   if (!req.user) return res.redirect("/auth/google");
   if (!req.file) return res.redirect("/register?error=Please upload your resume");
 
+  // Read resume file as base64 to store in JSONBin
+  const resumeBase64 = req.file.buffer.toString("base64");
+  const resumeMimeType = req.file.mimetype;
+  const resumeOriginalName = req.file.originalname;
+
+  // Parse resume text using Groq AI
+  let resumeText = "";
+  let parsedDetails = {};
+  try {
+    const textContent = req.file.buffer.toString("utf-8");
+    resumeText = textContent.substring(0, 3000);
+
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [{
+        role: "user",
+        content: `Extract details from this resume. Return ONLY valid JSON:
+"${resumeText}"
+
+{
+  "phone": "phone number",
+  "linkedin": "linkedin URL",
+  "skills": ["skill1", "skill2", "skill3"],
+  "clients": "key clients or projects",
+  "summary": "2 line professional summary",
+  "certifications": "certifications if any"
+}`
+      }],
+      max_tokens: 400
+    });
+
+    const text = response.choices[0].message.content;
+    const json = text.match(/\{[\s\S]*\}/)?.[0];
+    if (json) parsedDetails = JSON.parse(json);
+  } catch(e) {
+    console.log("Resume parse error:", e.message);
+  }
+
   await saveCandidate({
     id: req.user.id,
     name: req.body.name || req.user.displayName,
@@ -90,6 +130,15 @@ app.post("/register", upload.single("resume"), async (req, res) => {
     role: req.body.role,
     accessToken: req.user.accessToken,
     refreshToken: req.user.refreshToken,
+    phone: parsedDetails.phone || "",
+    linkedin: parsedDetails.linkedin || "",
+    skills: parsedDetails.skills || [],
+    clients: parsedDetails.clients || "",
+    summary: parsedDetails.summary || "",
+    certifications: parsedDetails.certifications || "",
+    resumeBase64: resumeBase64,
+    resumeMimeType: resumeMimeType,
+    resumeFileName: resumeOriginalName,
     registeredAt: new Date().toISOString()
   });
 
