@@ -142,15 +142,9 @@ app.get("/linkedin", async (req, res) => {
 // INSTANT TRIGGER - calls the API internally
 app.post("/linkedin/submit", async (req, res) => {
   if (!req.user) return res.status(401).json({ error: "Not logged in" });
-  
   try {
-    const triggerRes = await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'https://d365-job-hunter-app.vercel.app'}/api/trigger-emails`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req.body)
-    });
-    const data = await triggerRes.json();
-    res.json(data);
+    const triggerHandler = require("./api/trigger-emails");
+    await triggerHandler(req, res);
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
