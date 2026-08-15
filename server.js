@@ -93,7 +93,7 @@ app.post("/register", upload.single("resume"), async (req, res) => {
       `resumes/${candidateId}/resume.${fileExt}`,
       req.file.buffer,
       {
-        access: 'private',
+        access: 'public',
         contentType: req.file.mimetype,
         addRandomSuffix: true,
         token: process.env.BLOB_READ_WRITE_TOKEN

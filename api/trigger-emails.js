@@ -186,14 +186,10 @@ async function sendGmail(candidate, to, subject, body) {
   let resumeBuffer = null;
   let resumeFilename = "Resume.pdf";
   try {
-    if (candidate.resume && candidate.resume.pathname) {
-      const { get } = require("@vercel/blob");
-      const result = await get(candidate.resume.pathname, {
-        access: 'private',
-        token: process.env.BLOB_READ_WRITE_TOKEN
-      });
-      if (result && result.stream) {
-        const arrayBuffer = await new Response(result.stream).arrayBuffer();
+    if (candidate.resume && candidate.resume.url) {
+      const response = await fetch(candidate.resume.url);
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
         resumeBuffer = Buffer.from(arrayBuffer);
         resumeFilename = candidate.resume.filename || "Resume.pdf";
       }
