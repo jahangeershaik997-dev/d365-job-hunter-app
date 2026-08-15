@@ -30,7 +30,9 @@ passport.use(new GoogleStrategy({
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   callbackURL: "https://d365-job-hunter-app.vercel.app/auth/callback"
 }, (accessToken, refreshToken, profile, done) => {
+  // Save BOTH tokens to profile
   profile.accessToken = accessToken;
+  profile.refreshToken = refreshToken;
   return done(null, profile);
 }));
 
@@ -55,7 +57,7 @@ async function getCandidates() {
 async function saveCandidate(candidate) {
   const candidates = await getCandidates();
   const existing = candidates.findIndex(c => c.email === candidate.email);
-  if (existing >= 0) candidates[existing] = candidate;
+  if (existing >= 0) candidates[existing] = { ...candidates[existing], ...candidate };
   else candidates.push(candidate);
   await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
     method: "PUT",
@@ -86,6 +88,8 @@ app.post("/register", upload.single("resume"), async (req, res) => {
     email: req.user.emails[0].value,
     experience: req.body.experience,
     role: req.body.role,
+    accessToken: req.user.accessToken,
+    refreshToken: req.user.refreshToken,
     registeredAt: new Date().toISOString()
   });
 
