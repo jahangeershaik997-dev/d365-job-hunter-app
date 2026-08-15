@@ -126,3 +126,53 @@ if (require.main === module) {
 }
 
 module.exports = app;
+
+// ============================================================
+// LINKEDIN POSTS ROUTES
+// ============================================================
+const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
+const JSONBIN_MASTER_KEY_LI = process.env.JSONBIN_MASTER_KEY;
+
+async function getLinkedInPosts() {
+  try {
+    if (!LINKEDIN_BIN_ID) return [];
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_MASTER_KEY_LI }
+    });
+    const data = await res.json();
+    return Array.isArray(data.record) ? data.record : [];
+  } catch(e) { return []; }
+}
+
+async function saveLinkedInPost(post) {
+  const posts = await getLinkedInPosts();
+  posts.unshift(post);
+  await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_MASTER_KEY_LI },
+    body: JSON.stringify(posts)
+  });
+}
+
+app.get("/linkedin", async (req, res) => {
+  const posts = await getLinkedInPosts();
+  res.render("linkedin", {
+    user: req.user,
+    posts,
+    success: req.query.success || false
+  });
+});
+
+app.post("/linkedin", async (req, res) => {
+  if (!req.user) return res.redirect("/auth/google");
+  await saveLinkedInPost({
+    text: req.body.text,
+    email: req.body.email || null,
+    url: req.body.url || null,
+    company: null,
+    processed: false,
+    addedBy: req.user.emails[0].value,
+    addedAt: new Date().toISOString()
+  });
+  res.redirect("/linkedin?success=true");
+});
