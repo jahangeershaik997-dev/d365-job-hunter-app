@@ -83,77 +83,104 @@ app.post("/register", upload.single("resume"), async (req, res) => {
   if (!req.user) return res.redirect("/auth/google");
   if (!req.file) return res.redirect("/register?error=Please upload your resume");
 
-  // Read resume file as base64 to store in JSONBin
-  const resumeBase64 = req.file.buffer.toString("base64");
-  const resumeMimeType = req.file.mimetype;
-  const resumeOriginalName = req.file.originalname;
-
-  // Parse resume text using Groq AI
-  let resumeText = "";
-  let parsedDetails = {};
   try {
-    // Extract text based on file type
-    const fileExt = req.file.originalname.toLowerCase();
-    if (fileExt.endsWith('.pdf')) {
-      const pdfParse = require('pdf-parse');
-      const pdfData = await pdfParse(req.file.buffer);
-      resumeText = pdfData.text.substring(0, 3000);
-    } else if (fileExt.endsWith('.docx')) {
-      const mammoth = require('mammoth');
-      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-      resumeText = result.value.substring(0, 3000);
-    } else {
-      resumeText = req.file.buffer.toString("utf-8").substring(0, 3000);
+    const { put } = require("@vercel/blob");
+    const candidateId = req.user.id;
+    const fileExt = req.file.originalname.toLowerCase().endsWith('.pdf') ? 'pdf' : 'docx';
+
+    // STEP 1: Upload resume to Vercel Blob
+    const blob = await put(
+      `resumes/${candidateId}/resume.${fileExt}`,
+      req.file.buffer,
+      {
+        access: 'private',
+        contentType: req.file.mimetype,
+        addRandomSuffix: true,
+        token: process.env.BLOB_READ_WRITE_TOKEN
+      }
+    );
+
+    // STEP 2: Extract text from resume
+    let resumeText = "";
+    try {
+      if (fileExt === 'pdf') {
+        const pdfParse = require('pdf-parse');
+        const pdfData = await pdfParse(req.file.buffer);
+        resumeText = pdfData.text.substring(0, 3000);
+      } else {
+        const mammoth = require('mammoth');
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        resumeText = result.value.substring(0, 3000);
+      }
+    } catch(e) {
+      console.log("Resume text extraction error:", e.message);
     }
 
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{
-        role: "user",
-        content: `Extract details from this resume. Return ONLY valid JSON:
+    // STEP 3: Extract candidate profile using Groq AI
+    let parsedDetails = {};
+    if (resumeText) {
+      try {
+        const Groq = require("groq-sdk");
+        const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+        const response = await groq.chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          messages: [{
+            role: "user",
+            content: `Extract details from this resume. Return ONLY valid JSON with no explanation:
+
 "${resumeText}"
 
 {
-  "phone": "phone number",
-  "linkedin": "linkedin URL",
-  "skills": ["skill1", "skill2", "skill3"],
-  "clients": "key clients or projects",
-  "summary": "2 line professional summary",
-  "certifications": "certifications if any"
+  "phone": "phone number or empty string",
+  "linkedin": "linkedin URL or empty string",
+  "skills": ["skill1", "skill2", "skill3", "skill4", "skill5"],
+  "clients": "key clients or projects worked on",
+  "summary": "2 sentence professional summary",
+  "certifications": "certifications if any or empty string",
+  "currentRole": "most recent job title"
 }`
-      }],
-      max_tokens: 400
+          }],
+          max_tokens: 500
+        });
+        const text = response.choices[0].message.content;
+        const json = text.match(/\{[\s\S]*\}/)?.[0];
+        if (json) parsedDetails = JSON.parse(json);
+      } catch(e) {
+        console.log("Groq parse error:", e.message);
+      }
+    }
+
+    // STEP 4: Save to JSONBin
+    await saveCandidate({
+      id: candidateId,
+      name: req.body.name || req.user.displayName,
+      email: req.user.emails[0].value,
+      experience: req.body.experience,
+      role: req.body.role || parsedDetails.currentRole || "",
+      accessToken: req.user.accessToken,
+      refreshToken: req.user.refreshToken,
+      phone: parsedDetails.phone || "",
+      linkedin: parsedDetails.linkedin || "",
+      skills: parsedDetails.skills || [],
+      clients: parsedDetails.clients || "",
+      summary: parsedDetails.summary || "",
+      certifications: parsedDetails.certifications || "",
+      resumeText: resumeText.substring(0, 2000),
+      resume: {
+        pathname: blob.pathname,
+        filename: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        url: blob.url
+      },
+      registeredAt: new Date().toISOString()
     });
 
-    const text = response.choices[0].message.content;
-    const json = text.match(/\{[\s\S]*\}/)?.[0];
-    if (json) parsedDetails = JSON.parse(json);
+    res.redirect("/dashboard");
   } catch(e) {
-    console.log("Resume parse error:", e.message);
+    console.error("Registration error:", e);
+    res.redirect("/register?error=Registration failed: " + e.message);
   }
-
-  await saveCandidate({
-    id: req.user.id,
-    name: req.body.name || req.user.displayName,
-    email: req.user.emails[0].value,
-    experience: req.body.experience,
-    role: req.body.role,
-    accessToken: req.user.accessToken,
-    refreshToken: req.user.refreshToken,
-    phone: parsedDetails.phone || "",
-    linkedin: parsedDetails.linkedin || "",
-    skills: parsedDetails.skills || [],
-    clients: parsedDetails.clients || "",
-    summary: parsedDetails.summary || "",
-    certifications: parsedDetails.certifications || "",
-    resumeBase64: resumeBase64,
-    resumeMimeType: resumeMimeType,
-    resumeFileName: resumeOriginalName,
-    registeredAt: new Date().toISOString()
-  });
-
-  res.redirect("/dashboard");
 });
 
 app.get("/dashboard", async (req, res) => {

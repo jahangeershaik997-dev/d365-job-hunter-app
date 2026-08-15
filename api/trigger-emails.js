@@ -99,34 +99,50 @@ async function parseImagePost(imageBase64, groq) {
 // ============================================================
 async function generateEmail(candidate, job, groq, recruiterName = null) {
   const greeting = recruiterName ? `Dear ${recruiterName}` : "Dear Hiring Manager";
-  
-  // Get job-relevant skills
-  const jobSkills = Array.isArray(job.skills) ? job.skills : 
-    (job.skills || "C#.NET, Power Platform, Azure").split(",").map(s => s.trim());
+  const jobSkills = Array.isArray(job.skills) ? job.skills.join(", ") :
+    (job.skills || "D365 CRM development");
 
-  const prompt = `Write a professional job application email following this EXACT structure:
+  const prompt = `Write a professional job application email.
 
-1. Subject: [${candidate.experience}+ Years D365 CRM Developer] | [Job Title] Role at [Company]
+STRICT RULES:
+- Use ONLY facts from this candidate's profile - never invent experience or clients
+- Write from ${candidate.name}'s perspective
+- Be CONFIDENT and PROFESSIONAL
+- Each candidate should have a UNIQUE email highlighting THEIR specific experience
+
+CANDIDATE PROFILE:
+Name: ${candidate.name}
+Experience: ${candidate.experience}+ years Microsoft Dynamics 365 CRM Developer
+Phone: ${candidate.phone || 'available on request'}
+LinkedIn: ${candidate.linkedin || ''}
+Key Skills: ${Array.isArray(candidate.skills) ? candidate.skills.join(', ') : candidate.skills || 'D365 CRM, C#.NET, Power Platform'}
+Clients/Projects: ${candidate.clients || ''}
+Certifications: ${candidate.certifications || ''}
+Summary: ${candidate.summary || ''}
+Resume Text: ${(candidate.resumeText || '').substring(0, 500)}
+
+JOB DETAILS:
+Title: ${job.title}
+Company: ${job.company}
+Location: ${job.location}
+Requirements: ${jobSkills}
+
+EMAIL STRUCTURE (follow exactly):
+1. Subject: [${candidate.experience}+ Years D365 CRM Developer] | [Job Title] at [Company]
 2. Greeting: ${greeting},
-3. One-line intro: who the candidate is (name + experience + role)
-4. "Here's what I bring to [company]:" followed by exactly 3 bullet points with relevant skills from: ${jobSkills.join(", ")}
-   Format: • [Skill] — [one specific achievement or value]
-5. Call to action: "I'd love a quick 15-minute call to explore how I can contribute."
-6. Contact block:
+3. One line: who you are (name + experience + specialization)
+4. "Here's what I bring to ${job.company}:"
+   • [Skill 1 from THEIR profile] — [specific achievement]
+   • [Skill 2 from THEIR profile] — [specific achievement]
+   • [Skill 3 from THEIR profile] — [specific achievement]
+5. "I'd love a quick 15-minute call to explore how I can contribute."
+6. Contact:
    📱 ${candidate.phone || 'Available on request'}
-   🔗 ${candidate.linkedin || 'linkedin.com/in/' + candidate.name.toLowerCase().replace(' ', '')}
+   🔗 ${candidate.linkedin || ''}
    ✉️ ${candidate.email}
-7. "Best regards," + name
+7. Best regards, ${candidate.name}
 
-Candidate details:
-- Name: ${candidate.name}
-- Experience: ${candidate.experience}+ years D365 CRM
-- Past clients: MSCI, Walmart Health & Wellness, Unilever, SIS K-12
-- Key skills: C#.NET Plugins, Power Platform, Azure Functions, Azure DevOps, JavaScript, FetchXML
-
-Job: ${job.title} at ${job.company} (${job.location})
-
-Write ONLY the email. No explanations. Follow the structure exactly.`;
+Write ONLY the email. Follow structure exactly. Use candidate's REAL experience only.`;
 
   const response = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
@@ -135,13 +151,11 @@ Write ONLY the email. No explanations. Follow the structure exactly.`;
   });
 
   const text = response.choices[0].message.content;
-  
-  // Extract subject and body
   const lines = text.split("\n");
   let subject = "";
   let bodyLines = [];
   let foundSubject = false;
-  
+
   for (const line of lines) {
     if (line.toLowerCase().startsWith("subject:")) {
       subject = line.replace(/^subject:\s*/i, "").trim();
@@ -152,13 +166,11 @@ Write ONLY the email. No explanations. Follow the structure exactly.`;
   }
 
   if (!subject) {
-    subject = `${candidate.experience}+ Years D365 CRM Developer | ${job.title} Role at ${job.company}`;
+    subject = `${candidate.experience}+ Years D365 CRM Developer | ${job.title} at ${job.company}`;
     bodyLines = text.split("\n");
   }
 
-  const body = bodyLines.join("\n").trim();
-
-  return { subject, body };
+  return { subject, body: bodyLines.join("\n").trim() };
 }
 
 async function sendGmail(candidate, to, subject, body) {
@@ -169,19 +181,71 @@ async function sendGmail(candidate, to, subject, body) {
   );
   oauth2Client.setCredentials({ refresh_token: candidate.refreshToken });
   const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-  const message = [
-    `From: ${candidate.name} <${candidate.email}>`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    "Content-Type: text/plain; charset=utf-8",
-    "",
-    body
-  ].join("\r\n");
+
+  // Get resume from Vercel Blob and attach
+  let resumeBuffer = null;
+  let resumeFilename = "Resume.pdf";
+  try {
+    if (candidate.resume && candidate.resume.pathname) {
+      const { get } = require("@vercel/blob");
+      const result = await get(candidate.resume.pathname, {
+        access: 'private',
+        token: process.env.BLOB_READ_WRITE_TOKEN
+      });
+      if (result && result.stream) {
+        const arrayBuffer = await new Response(result.stream).arrayBuffer();
+        resumeBuffer = Buffer.from(arrayBuffer);
+        resumeFilename = candidate.resume.filename || "Resume.pdf";
+      }
+    }
+  } catch(e) {
+    console.log("Resume fetch error:", e.message);
+  }
+
+  // Build MIME email with attachment
+  const boundary = "boundary_" + Date.now();
+  let mimeMessage = "";
+
+  if (resumeBuffer) {
+    // Multipart email with attachment
+    mimeMessage = [
+      `From: ${candidate.name} <${candidate.email}>`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      ``,
+      `--${boundary}`,
+      `Content-Type: text/plain; charset=utf-8`,
+      ``,
+      body,
+      ``,
+      `--${boundary}`,
+      `Content-Type: ${candidate.resume?.mimeType || 'application/pdf'}`,
+      `Content-Transfer-Encoding: base64`,
+      `Content-Disposition: attachment; filename="${resumeFilename}"`,
+      ``,
+      resumeBuffer.toString("base64"),
+      `--${boundary}--`
+    ].join("\r\n");
+  } else {
+    // Plain text email without attachment
+    mimeMessage = [
+      `From: ${candidate.name} <${candidate.email}>`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset=utf-8`,
+      ``,
+      body
+    ].join("\r\n");
+  }
+
+  const raw = Buffer.from(mimeMessage).toString("base64url");
   await gmail.users.messages.send({
     userId: "me",
-    requestBody: { raw: Buffer.from(message).toString("base64url") }
+    requestBody: { raw }
   });
-  console.log(`✅ Sent from ${candidate.email} to ${to}`);
+  console.log(`✅ Sent from ${candidate.email} to ${to} ${resumeBuffer ? '(with resume)' : '(no resume)'}`);
 }
 
 async function updateSheet(candidate, job, hrEmail, subject, sent) {
