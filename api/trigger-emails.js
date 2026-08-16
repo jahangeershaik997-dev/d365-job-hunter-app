@@ -403,10 +403,8 @@ module.exports = async (req, res) => {
         }
         await updateSheet(candidate, job, hrEmail, subject, sent);
         results.push({ candidate: candidate.name, company: job.company, hrEmail, sent });
-        // Random delay between 4-7 minutes between each candidate
-        const delayMs = (Math.floor(Math.random() * 3) + 4) * 60 * 1000;
-        console.log(`⏳ Waiting ${delayMs/60000} minutes before next candidate...`);
-        await new Promise(r => setTimeout(r, delayMs));
+        // Small delay between candidates - safe for Vercel timeout
+        await new Promise(r => setTimeout(r, 3000));
       } catch(e) {
         results.push({ candidate: candidate.name, company: job.company, hrEmail, sent: false });
       }

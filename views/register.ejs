@@ -4,49 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Register - D365 Job Hunter</title>
+  <link rel="stylesheet" href="/styles.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', sans-serif; background: #0f1923; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .card { background: #1a2a3a; border-radius: 16px; padding: 40px; width: 100%; max-width: 500px; }
-    h1 { font-size: 28px; color: #00d4ff; margin-bottom: 8px; }
-    .subtitle { color: #8899aa; margin-bottom: 30px; font-size: 14px; }
-    .form-group { margin-bottom: 20px; }
-    label { display: block; font-size: 14px; color: #8899aa; margin-bottom: 8px; }
-    input, select { width: 100%; padding: 12px 15px; background: #0f1923; border: 1px solid #2a3a4a; border-radius: 8px; color: #fff; font-size: 16px; }
-    input:focus, select:focus { outline: none; border-color: #00d4ff; }
-    .upload-area { border: 2px dashed #2a3a4a; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; }
-    .upload-area:hover { border-color: #00d4ff; }
-    .upload-icon { font-size: 40px; margin-bottom: 10px; }
-    .upload-text { color: #8899aa; font-size: 14px; }
-    .btn { width: 100%; padding: 15px; background: #00d4ff; color: #000; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 10px; }
-    .btn:hover { background: #00b8d9; }
-    .google-btn { width: 100%; padding: 15px; background: #fff; color: #000; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none; margin-bottom: 20px; }
-    .error { background: #ff4444; color: #fff; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
-    .step { background: #0f1923; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
-    .step-title { font-size: 12px; color: #8899aa; margin-bottom: 5px; }
-    .step-desc { font-size: 14px; color: #fff; }
+    body { display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .reg-card { width: 100%; max-width: 500px; padding: 40px; }
+    .reg-card h1 { font-size: 26px; color: var(--accent); margin-bottom: 8px; }
+    .reg-card .subtitle { color: var(--text-muted); margin-bottom: 28px; font-size: 14px; }
+    .step-box { background: var(--bg-inset); border-radius: var(--radius-sm); padding: 15px; margin-bottom: 20px; border: 1px solid var(--border); }
+    .step-title { font-size: 11px; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 4px; }
+    .step-desc { font-size: 14px; }
   </style>
 </head>
 <body>
-  <div class="card">
+  <div class="card reg-card">
     <h1>🚀 Join D365 Job Hunter</h1>
     <p class="subtitle">Register once. Get jobs applied automatically every day!</p>
 
     <% if (error) { %>
-      <div class="error">⚠️ <%= error %></div>
+      <div class="alert alert-error">⚠️ <%= error %></div>
     <% } %>
 
     <% if (!user) { %>
-      <div class="step">
+      <div class="step-box">
         <div class="step-title">STEP 1</div>
         <div class="step-desc">Login with your Gmail first</div>
       </div>
-      <a href="/auth/google" class="google-btn">
-        <img src="https://www.google.com/favicon.ico" width="20" height="20">
+      <a href="/auth/google" class="btn-google btn-block">
+        <img src="https://www.google.com/favicon.ico" width="20" height="20" alt="">
         Login with Google
       </a>
     <% } else { %>
-      <div class="step">
+      <div class="step-box">
         <div class="step-title">✅ LOGGED IN AS</div>
         <div class="step-desc"><%= user.displayName %> · <%= user.emails[0].value %></div>
       </div>
@@ -83,7 +71,7 @@
           </div>
         </div>
 
-        <button type="submit" class="btn">✅ Register & Start Applying!</button>
+        <button type="submit" class="btn btn-primary btn-block">✅ Register &amp; Start Applying!</button>
       </form>
     <% } %>
   </div>

@@ -4,33 +4,48 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>D365 Job Hunter</title>
+  <link rel="stylesheet" href="/styles.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', sans-serif; background: #0f1923; color: #fff; min-height: 100vh; }
-    .hero { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 40px 20px; text-align: center; }
-    .logo { font-size: 60px; margin-bottom: 20px; }
-    h1 { font-size: 48px; font-weight: 800; color: #00d4ff; margin-bottom: 10px; }
-    .subtitle { font-size: 20px; color: #8899aa; margin-bottom: 40px; }
-    .stats { display: flex; gap: 40px; margin-bottom: 50px; }
-    .stat { background: #1a2a3a; border-radius: 12px; padding: 20px 30px; }
-    .stat-num { font-size: 36px; font-weight: 800; color: #00d4ff; }
-    .stat-label { font-size: 14px; color: #8899aa; margin-top: 5px; }
-    .buttons { display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; }
-    .btn { padding: 15px 35px; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer; border: none; display: inline-block; }
-    .btn-primary { background: #00d4ff; color: #000; }
-    .btn-secondary { background: #1a2a3a; color: #fff; border: 1px solid #00d4ff; }
-    .features { display: flex; gap: 20px; margin-top: 60px; flex-wrap: wrap; justify-content: center; }
-    .feature { background: #1a2a3a; border-radius: 12px; padding: 20px; width: 200px; }
-    .feature-icon { font-size: 30px; margin-bottom: 10px; }
-    .feature-title { font-size: 14px; font-weight: 600; color: #00d4ff; }
-    .feature-desc { font-size: 12px; color: #8899aa; margin-top: 5px; }
+    .hero { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 78vh; padding: 60px 20px 40px; text-align: center; }
+    .hero .logo-emoji { font-size: 56px; margin-bottom: 18px; }
+    .hero h1 { font-size: 46px; color: var(--accent); margin-bottom: 12px; letter-spacing: -1px; }
+    .hero .subtitle { font-size: 18px; color: var(--text-muted); max-width: 560px; margin: 0 auto 36px; }
+    .hero .stats { display: flex; gap: 24px; margin-bottom: 40px; flex-wrap: wrap; justify-content: center; }
+    .hero .stat { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 30px; }
+    .hero .stat-num { font-size: 30px; font-weight: 800; color: var(--accent); }
+    .hero .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .buttons { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+
+    .how-it-works { padding: 60px 20px; max-width: 1000px; margin: 0 auto; }
+    .how-it-works h2 { text-align: center; font-size: 28px; color: var(--accent); margin-bottom: 8px; }
+    .how-it-works .lead { text-align: center; color: var(--text-muted); margin-bottom: 40px; }
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+    .step-card { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; position: relative; }
+    .step-num { position: absolute; top: -12px; left: 20px; background: var(--accent); color: #000; font-weight: 800; font-size: 13px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .step-icon { font-size: 28px; margin: 10px 0 12px; }
+    .step-title { font-weight: 700; margin-bottom: 6px; }
+    .step-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+    footer { text-align: center; padding: 40px 20px; color: var(--text-faint); font-size: 13px; }
   </style>
 </head>
 <body>
+  <div class="navbar">
+    <a href="/" class="logo">🚀 D365 Job Hunter</a>
+    <div class="nav-links">
+      <% if (user) { %>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/logout">Logout</a>
+      <% } else { %>
+        <a href="/auth/google">Login</a>
+      <% } %>
+    </div>
+  </div>
+
   <div class="hero">
-    <div class="logo">🚀</div>
+    <div class="logo-emoji">🚀</div>
     <h1>D365 Job Hunter</h1>
-    <p class="subtitle">Automated job applications for Microsoft Dynamics 365 professionals</p>
+    <p class="subtitle">Automated job applications for Microsoft Dynamics 365 professionals. Register once, and let AI handle scraping, HR outreach, and personalized emails every day.</p>
 
     <div class="stats">
       <div class="stat">
@@ -38,12 +53,12 @@
         <div class="stat-label">Candidates Registered</div>
       </div>
       <div class="stat">
-        <div class="stat-num">9 AM</div>
-        <div class="stat-label">Daily Auto-Apply</div>
+        <div class="stat-num"><%= emailsSent %></div>
+        <div class="stat-label">Emails Sent</div>
       </div>
       <div class="stat">
-        <div class="stat-num">FREE</div>
-        <div class="stat-label">Powered by Groq AI</div>
+        <div class="stat-num">9 AM</div>
+        <div class="stat-label">Daily Auto-Apply (IST)</div>
       </div>
     </div>
 
@@ -52,33 +67,45 @@
         <a href="/dashboard" class="btn btn-primary">Go to Dashboard</a>
         <a href="/logout" class="btn btn-secondary">Logout</a>
       <% } else { %>
-        <a href="/auth/google" class="btn btn-primary">🔑 Login with Google</a>
-        <a href="/register" class="btn btn-secondary">Register Now</a>
+        <a href="/auth/google" class="btn-google">
+          <img src="https://www.google.com/favicon.ico" width="18" height="18" alt="">
+          Login with Google
+        </a>
       <% } %>
     </div>
+  </div>
 
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon">🔍</div>
-        <div class="feature-title">Auto Scrape</div>
-        <div class="feature-desc">Scrapes Indeed & LinkedIn daily</div>
+  <div class="how-it-works">
+    <h2>How It Works</h2>
+    <p class="lead">Four steps between you and your inbox filling up with interview calls.</p>
+    <div class="steps">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-icon">🔑</div>
+        <div class="step-title">Login &amp; Register</div>
+        <div class="step-desc">Sign in with Google, upload your resume once. AI extracts your skills, clients and certifications automatically.</div>
       </div>
-      <div class="feature">
-        <div class="feature-icon">🤖</div>
-        <div class="feature-title">AI Emails</div>
-        <div class="feature-desc">Groq AI writes personalized emails</div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-icon">🔍</div>
+        <div class="step-title">Jobs Get Found</div>
+        <div class="step-desc">The daily automation scrapes fresh D365 openings, or paste a LinkedIn post yourself for an instant blast.</div>
       </div>
-      <div class="feature">
-        <div class="feature-icon">📧</div>
-        <div class="feature-title">Auto Send</div>
-        <div class="feature-desc">Sends from YOUR Gmail</div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-icon">🤖</div>
+        <div class="step-title">AI Writes &amp; Sends</div>
+        <div class="step-desc">Groq AI drafts a unique, personalized email per candidate and sends it straight from your own Gmail.</div>
       </div>
-      <div class="feature">
-        <div class="feature-icon">📊</div>
-        <div class="feature-title">Track All</div>
-        <div class="feature-desc">Google Sheet tracking</div>
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-icon">📊</div>
+        <div class="step-title">Track Everything</div>
+        <div class="step-desc">Every application is logged to a shared Google Sheet so you always know what went out and when.</div>
       </div>
     </div>
   </div>
+
+  <footer>D365 Job Hunter &middot; Built for Dynamics 365 CRM professionals</footer>
 </body>
 </html>

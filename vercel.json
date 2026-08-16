@@ -4,5 +4,13 @@
       "path": "/api/send-daily-applications",
       "schedule": "30 3 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/send-daily-applications.js": {
+      "maxDuration": 60
+    },
+    "api/trigger-emails.js": {
+      "maxDuration": 60
+    }
+  }
 }

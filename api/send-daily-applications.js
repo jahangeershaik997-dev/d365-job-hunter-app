@@ -28,10 +28,50 @@ async function getLinkedInPosts() {
 }
 
 async function scrapeJobs() {
+  try {
+    const { execSync } = require("child_process");
+    const result = execSync(`python3 -c "
+from jobspy import scrape_jobs
+import json
+try:
+    jobs = scrape_jobs(
+        site_name=['linkedin','indeed'],
+        search_term='Microsoft Dynamics 365 CRM Developer',
+        location='India',
+        results_wanted=20,
+        hours_old=24,
+        country_indeed='India'
+    )
+    filtered = []
+    skip_words = ['intern','fresher','trainee','junior','graduate','entry']
+    for _, job in jobs.iterrows():
+        title = str(job.get('title','')).lower()
+        if any(x in title for x in skip_words):
+            continue
+        filtered.append({
+            'title': str(job.get('title','')),
+            'company': str(job.get('company','')),
+            'location': str(job.get('location','')),
+            'url': str(job.get('job_url','')),
+            'source': str(job.get('site','')),
+            'description': str(job.get('description',''))[:400]
+        })
+    print(json.dumps(filtered[:15]))
+except Exception as e:
+    print(json.dumps([]))
+"`, { timeout: 120000 });
+    const jobs = JSON.parse(result.toString().trim());
+    if (jobs.length > 0) {
+      console.log(`✅ Scraped ${jobs.length} real jobs`);
+      return jobs;
+    }
+  } catch(e) {
+    console.log("Scrape failed, using fallback job list:", e.message);
+  }
   return [
     { title: "Senior D365 CRM Developer", company: "Capgemini", location: "Hyderabad", url: "https://capgemini.com/careers", source: "LinkedIn", description: "Senior D365 CE developer C#.NET plugins Azure Functions Power Platform" },
-    { title: "MS Dynamics 365 CE Developer", company: "Infosys", location: "Bangalore", url: "https://infosys.com/careers", source: "Indeed", description: "D365 CRM customization Power Platform plugins workflows JavaScript" },
-    { title: "D365 CE Technical Consultant", company: "Wipro", location: "Hyderabad", url: "https://wipro.com/careers", source: "LinkedIn", description: "Dynamics 365 CE developer Azure DevOps CI/CD Ribbon Workbench" }
+    { title: "MS Dynamics 365 CE Developer", company: "Infosys", location: "Bangalore", url: "https://infosys.com/careers", source: "Indeed", description: "D365 CRM customization Power Platform plugins workflows" },
+    { title: "D365 CE Technical Consultant", company: "Wipro", location: "Hyderabad", url: "https://wipro.com/careers", source: "LinkedIn", description: "Dynamics 365 CE developer Azure DevOps CI/CD" }
   ];
 }
 
@@ -67,31 +107,30 @@ function isRealPersonEmail(email) {
 }
 
 async function findHREmail(company) {
-  // Only use Apollo to find REAL person emails
   try {
-    const res = await fetch(`https://api.apollo.io/api/v1/mixed_people/search`, {
+    const res = await fetch("https://api.apollo.io/api/v1/mixed_people/search", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Api-Key": process.env.APOLLO_API_KEY },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": process.env.APOLLO_API_KEY
+      },
       body: JSON.stringify({
         q_organization_name: company,
-        person_titles: ["HR Manager", "Recruiter", "Talent Acquisition Manager", "HR Business Partner", "Technical Recruiter"],
-        per_page: 3
+        person_titles: ["Technical Recruiter","IT Recruiter","HR Manager","Talent Acquisition","Recruitment Manager"],
+        per_page: 5
       })
     });
     const data = await res.json();
-    
-    // Find first REAL person email
     for (const person of (data.people || [])) {
       if (person.email && isRealPersonEmail(person.email)) {
-        console.log(`✅ Found real HR: ${person.first_name} ${person.last_name} - ${person.email}`);
-        return person.email;
+        console.log(`✅ Apollo: ${person.first_name} - ${person.email}`);
+        return { email: person.email, name: person.first_name };
       }
     }
   } catch(e) {
     console.log("Apollo error:", e.message);
   }
-  
-  return null; // Skip if no real person email
+  return null;
 }
 
 async function generateEmail(candidate, job, groq, isLinkedIn = false, recruiterName = null) {
@@ -248,16 +287,17 @@ module.exports = async (req, res) => {
     // SCRAPED JOBS
     const jobs = await scrapeJobs();
     for (const job of jobs) {
-      const hrEmail = await findHREmail(job.company);
-      if (!hrEmail) {
+      const hr = await findHREmail(job.company);
+      if (!hr) {
         console.log(`⏭ Skip ${job.company} - no real person email found`);
         skipped.push(job.company);
         continue;
       }
+      const hrEmail = hr.email;
 
       for (const candidate of candidates) {
         try {
-          const { subject, body } = await generateEmail(candidate, job, groq);
+          const { subject, body } = await generateEmail(candidate, job, groq, false, hr.name);
           let sent = false;
           try {
             await sendGmail(candidate, hrEmail, subject, body);
@@ -281,7 +321,17 @@ module.exports = async (req, res) => {
         const details = await parseLinkedInPost(post, groq);
         if (!details) continue;
 
-        const hrEmail = post.email && isRealPersonEmail(post.email) ? post.email : await findHREmail(details.company);
+        let hrEmail = null;
+        let apolloName = null;
+        if (post.email && isRealPersonEmail(post.email)) {
+          hrEmail = post.email;
+        } else {
+          const hr = await findHREmail(details.company);
+          if (hr) {
+            hrEmail = hr.email;
+            apolloName = hr.name;
+          }
+        }
         if (!hrEmail) {
           console.log(`⏭ Skip LinkedIn post - no real person email`);
           continue;
@@ -298,7 +348,7 @@ module.exports = async (req, res) => {
 
         for (const candidate of candidates) {
           try {
-            const { subject, body } = await generateEmail(candidate, job, groq, true, details.recruiterName);
+            const { subject, body } = await generateEmail(candidate, job, groq, true, details.recruiterName || apolloName);
             let sent = false;
             try {
               await sendGmail(candidate, hrEmail, subject, body);

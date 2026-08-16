@@ -10,6 +10,7 @@ const app = express();
 
 const JSONBIN_BIN_ID = "6a7fe014f5f4af5e29189def";
 const JSONBIN_MASTER_KEY = "$2a$10$mOTOfSBdMCPsMoeb7FIaVubVgsRJqsgyheEbJc2nZ6aZ5p3cKzVJa";
+const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -70,9 +71,24 @@ async function saveCandidate(candidate) {
   });
 }
 
+async function getLinkedInPosts() {
+  try {
+    if (!LINKEDIN_BIN_ID) return [];
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
+    });
+    const data = await res.json();
+    return Array.isArray(data.record) ? data.record.filter(p => !p.init) : [];
+  } catch(e) {
+    return [];
+  }
+}
+
 app.get("/", async (req, res) => {
   const candidates = await getCandidates();
-  res.render("index", { user: req.user, candidateCount: candidates.length });
+  const posts = await getLinkedInPosts();
+  const emailsSent = posts.reduce((sum, p) => sum + (p.emailsSent || 0), 0);
+  res.render("index", { user: req.user, candidateCount: candidates.length, emailsSent });
 });
 
 app.get("/register", (req, res) => {
@@ -120,7 +136,6 @@ app.post("/register", upload.single("resume"), async (req, res) => {
     let parsedDetails = {};
     if (resumeText) {
       try {
-        const Groq = require("groq-sdk");
         const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
         const response = await groq.chat.completions.create({
           model: "llama-3.3-70b-versatile",
@@ -187,7 +202,38 @@ app.get("/dashboard", async (req, res) => {
   if (!req.user) return res.redirect("/");
   const candidates = await getCandidates();
   const me = candidates.find(c => c.email === req.user.emails[0].value);
-  res.render("dashboard", { user: req.user, candidate: me, candidates });
+  const posts = await getLinkedInPosts();
+  res.render("dashboard", {
+    user: req.user,
+    candidate: me,
+    candidates,
+    posts,
+    sheetUrl: process.env.GOOGLE_SHEET_ID
+      ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEET_ID}`
+      : "https://docs.google.com/spreadsheets/d/1DZpavtALZ0lyAPbeSEUbsfna3COIumHPWP_G-q8UziY"
+  });
+});
+
+// Post Job tab: parses a pasted post/image and instantly emails all candidates
+app.post("/linkedin/submit", async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const triggerHandler = require("./api/trigger-emails");
+    await triggerHandler(req, res);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Dashboard "Run Now" button: manually triggers the scrape + apply job
+app.post("/api/run-now", async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const runHandler = require("./api/send-daily-applications");
+    await runHandler(req, res);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get("/auth/google", passport.authenticate("google", {
@@ -205,37 +251,6 @@ app.get("/auth/callback", passport.authenticate("google", {
 app.get("/logout", (req, res) => {
   req.logout(() => res.redirect("/"));
 });
-// ADD THESE ROUTES TO server.js
-
-const LINKEDIN_BIN_ID_SRV = process.env.LINKEDIN_BIN_ID;
-const JSONBIN_MK_SRV = process.env.JSONBIN_MASTER_KEY;
-
-async function getLinkedInPostsSrv() {
-  try {
-    if (!LINKEDIN_BIN_ID_SRV) return [];
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID_SRV}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_MK_SRV }
-    });
-    const data = await res.json();
-    return Array.isArray(data.record) ? data.record.filter(p => !p.init) : [];
-  } catch(e) { return []; }
-}
-
-app.get("/linkedin", async (req, res) => {
-  const posts = await getLinkedInPostsSrv();
-  res.render("linkedin", { user: req.user, posts, success: req.query.success || false });
-});
-
-// INSTANT TRIGGER - calls the API internally
-app.post("/linkedin/submit", async (req, res) => {
-  if (!req.user) return res.status(401).json({ error: "Not logged in" });
-  try {
-    const triggerHandler = require("./api/trigger-emails");
-    await triggerHandler(req, res);
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
 if (require.main === module) {
   app.listen(process.env.PORT || 3000, () => {
@@ -244,53 +259,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-
-// ============================================================
-// LINKEDIN POSTS ROUTES
-// ============================================================
-const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
-const JSONBIN_MASTER_KEY_LI = process.env.JSONBIN_MASTER_KEY;
-
-async function getLinkedInPosts() {
-  try {
-    if (!LINKEDIN_BIN_ID) return [];
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_MASTER_KEY_LI }
-    });
-    const data = await res.json();
-    return Array.isArray(data.record) ? data.record : [];
-  } catch(e) { return []; }
-}
-
-async function saveLinkedInPost(post) {
-  const posts = await getLinkedInPosts();
-  posts.unshift(post);
-  await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_MASTER_KEY_LI },
-    body: JSON.stringify(posts)
-  });
-}
-
-app.get("/linkedin", async (req, res) => {
-  const posts = await getLinkedInPosts();
-  res.render("linkedin", {
-    user: req.user,
-    posts,
-    success: req.query.success || false
-  });
-});
-
-app.post("/linkedin", async (req, res) => {
-  if (!req.user) return res.redirect("/auth/google");
-  await saveLinkedInPost({
-    text: req.body.text,
-    email: req.body.email || null,
-    url: req.body.url || null,
-    company: null,
-    processed: false,
-    addedBy: req.user.emails[0].value,
-    addedAt: new Date().toISOString()
-  });
-  res.redirect("/linkedin?success=true");
-});

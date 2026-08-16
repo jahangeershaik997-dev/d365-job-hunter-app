@@ -4,81 +4,255 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard - D365 Job Hunter</title>
+  <link rel="stylesheet" href="/styles.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', sans-serif; background: #0f1923; color: #fff; min-height: 100vh; }
-    .navbar { background: #1a2a3a; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; }
-    .logo { font-size: 20px; font-weight: 800; color: #00d4ff; }
-    .nav-links { display: flex; gap: 15px; align-items: center; }
-    .nav-links a { color: #8899aa; text-decoration: none; font-size: 14px; }
-    .nav-links a:hover { color: #00d4ff; }
-    .container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }
-    h1 { font-size: 32px; color: #00d4ff; margin-bottom: 5px; }
-    .welcome { color: #8899aa; margin-bottom: 30px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-    .card { background: #1a2a3a; border-radius: 12px; padding: 25px; }
-    .card-icon { font-size: 30px; margin-bottom: 10px; }
-    .card-num { font-size: 36px; font-weight: 800; color: #00d4ff; }
-    .card-label { font-size: 13px; color: #8899aa; margin-top: 5px; }
-    .section { background: #1a2a3a; border-radius: 12px; padding: 25px; margin-bottom: 20px; }
-    .section h2 { font-size: 18px; color: #00d4ff; margin-bottom: 15px; }
+    .welcome { color: var(--text-muted); margin-bottom: 25px; }
     .profile-row { display: flex; gap: 20px; flex-wrap: wrap; }
-    .profile-item { background: #0f1923; border-radius: 8px; padding: 12px 20px; }
-    .profile-label { font-size: 11px; color: #8899aa; }
+    .profile-item { background: var(--bg-inset); border-radius: var(--radius-sm); padding: 12px 20px; border: 1px solid var(--border); }
+    .profile-label { font-size: 11px; color: var(--text-muted); letter-spacing: 0.5px; }
     .profile-value { font-size: 15px; font-weight: 600; margin-top: 3px; }
-    .not-registered { text-align: center; padding: 40px; }
-    .not-registered p { color: #8899aa; margin-bottom: 20px; }
-    .btn { padding: 12px 25px; background: #00d4ff; color: #000; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block; }
-    .candidates-list { display: grid; gap: 10px; }
-    .candidate-row { background: #0f1923; border-radius: 8px; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
-    .candidate-name { font-weight: 600; }
-    .candidate-meta { font-size: 13px; color: #8899aa; margin-top: 3px; }
-    .badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .badge-blue { background: #00d4ff22; color: #00d4ff; }
-    .sheet-link { color: #00d4ff; text-decoration: none; }
-    .schedule-info { background: #0f1923; border-radius: 8px; padding: 15px 20px; }
-    .schedule-time { font-size: 24px; font-weight: 800; color: #00d4ff; }
-    .schedule-desc { color: #8899aa; font-size: 13px; margin-top: 5px; }
+
+    .run-now-box { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .run-now-status { font-size: 13px; color: var(--text-muted); }
+
+    .activity-item { border-left: 3px solid var(--accent); }
+
+    .candidates-table { width: 100%; border-collapse: collapse; }
+    .candidates-table th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    .candidates-table td { padding: 14px; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .candidates-table tr:last-child td { border-bottom: none; }
+    .you-tag { color: var(--accent); font-size: 11px; font-weight: 700; margin-left: 6px; }
+
+    .status-list { display: grid; gap: 10px; }
+    .status-row { display: flex; justify-content: space-between; align-items: center; background: var(--bg-inset); border-radius: var(--radius-sm); padding: 12px 18px; border: 1px solid var(--border); font-size: 14px; }
+
+    .tab-group { display: flex; gap: 10px; margin-bottom: 20px; }
+    .subtab { padding: 8px 16px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; font-weight: 600; border: 1px solid var(--border); background: var(--bg-inset); color: var(--text-muted); }
+    .subtab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    .subtab-content { display: none; }
+    .subtab-content.active { display: block; }
+
+    .results-box { background: var(--bg-inset); border-radius: var(--radius-sm); padding: 20px; margin-top: 15px; display: none; border: 1px solid var(--border); }
+    .result-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .result-row:last-child { border-bottom: none; }
   </style>
 </head>
 <body>
   <div class="navbar">
-    <div class="logo">🚀 D365 Job Hunter</div>
+    <a href="/" class="logo">🚀 D365 Job Hunter</a>
     <div class="nav-links">
-      <a href="/">Home</a>
-      <a href="/register">Register</a>
-      <a href="/logout">Logout (<%= user.displayName %>)</a>
+      <span class="muted"><%= user.displayName %></span>
+      <a href="/logout">Logout</a>
     </div>
   </div>
 
   <div class="container">
-    <h1>Dashboard</h1>
+    <h1 style="font-size:32px;color:var(--accent);margin-bottom:5px">Dashboard</h1>
     <p class="welcome">Welcome back, <%= user.displayName %>! 👋</p>
 
-    <div class="cards">
-      <div class="card">
-        <div class="card-icon">👥</div>
-        <div class="card-num"><%= candidates.length %></div>
-        <div class="card-label">Candidates Registered</div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="overview">Dashboard</button>
+      <button class="tab-btn" data-tab="postjob">Post Job</button>
+      <button class="tab-btn" data-tab="candidates">Candidates</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+
+    <!-- ============ DASHBOARD TAB ============ -->
+    <div class="tab-panel active" id="tab-overview">
+      <% if (!candidate) { %>
+        <div class="alert alert-info">
+          ⚠️ You haven't completed your registration yet. <a href="/register" style="color:var(--accent);font-weight:700">Complete it now →</a>
+        </div>
+      <% } %>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon">👥</div>
+          <div class="stat-value"><%= candidates.length %></div>
+          <div class="stat-label">Candidates Registered</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📧</div>
+          <div class="stat-value"><%= posts.reduce((s, p) => s + (p.emailsSent || 0), 0) %></div>
+          <div class="stat-label">Emails Sent (All-Time)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📋</div>
+          <div class="stat-value"><%= posts.length %></div>
+          <div class="stat-label">Jobs Posted</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">⏰</div>
+          <div class="stat-value">9 AM</div>
+          <div class="stat-label">Next Auto Run (IST)</div>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-icon">⏰</div>
-        <div class="card-num">9 AM</div>
-        <div class="card-label">Daily Auto-Apply IST</div>
+
+      <div class="section">
+        <h2>⚡ Quick Action</h2>
+        <div class="run-now-box">
+          <button class="btn btn-primary" id="runNowBtn">▶️ Run Scraper Now</button>
+          <span class="run-now-status" id="runNowStatus">Manually triggers today's scrape → HR lookup → AI emails → sheet update.</span>
+        </div>
+        <div id="runNowResults" class="results-box"></div>
       </div>
-      <div class="card">
-        <div class="card-icon">📊</div>
-        <div class="card-num">Live</div>
-        <div class="card-label">Google Sheet Tracking</div>
-      </div>
-      <div class="card">
-        <div class="card-icon">🤖</div>
-        <div class="card-num">Groq</div>
-        <div class="card-label">AI Email Writer</div>
+
+      <div class="section">
+        <h2>🕓 Recent Activity</h2>
+        <% const recent = posts.slice(0, 8) %>
+        <% if (recent.length === 0) { %>
+          <div class="empty-state">
+            <div class="emoji">📭</div>
+            <p>No activity yet. Post a job or wait for the daily run!</p>
+          </div>
+        <% } else { %>
+          <div class="row-list">
+            <% recent.forEach(post => { %>
+              <div class="row-item activity-item">
+                <div>
+                  <div class="row-title"><%= post.company || 'Processing…' %></div>
+                  <div class="row-meta"><%= (post.text || '').substring(0, 90) %><%= (post.text || '').length > 90 ? '…' : '' %></div>
+                </div>
+                <div style="text-align:right">
+                  <span class="badge <%= post.emailsSent ? 'badge-green' : 'badge-yellow' %>">
+                    <%= post.emailsSent ? post.emailsSent + ' sent' : 'Pending' %>
+                  </span>
+                  <div class="row-meta"><%= new Date(post.addedAt).toLocaleString('en-IN') %></div>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
       </div>
     </div>
 
-    <% if (candidate) { %>
+    <!-- ============ POST JOB TAB ============ -->
+    <div class="tab-panel" id="tab-postjob">
+      <div id="postJobStatus" class="alert" style="display:none"></div>
+
+      <div class="section">
+        <h2>📱 Post a Job → Instant Email Blast</h2>
+        <p class="muted" style="margin-bottom:20px">Paste a LinkedIn post, JD, or upload an image → emails go out immediately from ALL candidates.</p>
+
+        <div class="tab-group">
+          <div class="subtab active" data-subtab="text">📝 Paste Text / JD</div>
+          <div class="subtab" data-subtab="image">🖼️ Upload Image</div>
+        </div>
+
+        <div id="subtab-text" class="subtab-content active">
+          <div class="form-group">
+            <label>Recruiter Email (if visible in post)</label>
+            <input type="email" id="emailInput" placeholder="e.g. john.smith@capgemini.com (optional)">
+          </div>
+          <div class="form-group">
+            <label>Paste LinkedIn Post / Job Description *</label>
+            <textarea id="textInput" placeholder="Paste the full LinkedIn post or job description here..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Post URL (optional)</label>
+            <input type="url" id="urlInput" placeholder="https://linkedin.com/posts/...">
+          </div>
+          <button class="btn btn-primary btn-block" id="submitBtn">🚀 Send Emails to All Candidates NOW!</button>
+        </div>
+
+        <div id="subtab-image" class="subtab-content">
+          <div class="form-group">
+            <label>Recruiter Email (if visible in image)</label>
+            <input type="email" id="imageEmailInput" placeholder="e.g. john.smith@capgemini.com (optional)">
+          </div>
+          <div class="form-group">
+            <label>Upload Screenshot / Image of Job Post</label>
+            <div class="upload-area" id="imageDropArea">
+              <div class="upload-icon">🖼️</div>
+              <div id="uploadText" class="upload-text">Click to upload LinkedIn screenshot or job post image</div>
+              <input type="file" id="imageFile" accept="image/*" style="display:none">
+            </div>
+            <div id="imagePreview" style="margin-top:10px;display:none">
+              <img id="previewImg" style="max-width:100%;border-radius:8px;max-height:280px">
+            </div>
+          </div>
+          <button class="btn btn-primary btn-block" id="imageSubmitBtn">🚀 Send Emails to All Candidates NOW!</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>📋 Recent Posts (<%= posts.length %>)</h2>
+        <% if (posts.length === 0) { %>
+          <div class="empty-state">
+            <div class="emoji">📭</div>
+            <p>No posts yet. Add your first job post above!</p>
+          </div>
+        <% } else { %>
+          <div class="row-list">
+            <% posts.slice(0, 10).forEach(post => { %>
+              <div class="row-item">
+                <div>
+                  <div class="row-title"><%= post.company || '⏳ Processing…' %></div>
+                  <div class="row-meta"><%= (post.text || '').substring(0, 130) %>…</div>
+                  <div class="row-meta">
+                    <%= new Date(post.addedAt).toLocaleString('en-IN') %>
+                    <% if (post.hrEmail) { %> · HR: <%= post.hrEmail %><% } %>
+                  </div>
+                </div>
+                <span class="badge <%= post.emailsSent ? 'badge-green' : 'badge-yellow' %>">
+                  <%= post.emailsSent ? '✅ ' + post.emailsSent + ' emails sent' : '⏳ Pending' %>
+                </span>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- ============ CANDIDATES TAB ============ -->
+    <div class="tab-panel" id="tab-candidates">
+      <div class="section">
+        <h2>👥 All Candidates (<%= candidates.length %>)</h2>
+        <% if (candidates.length === 0) { %>
+          <div class="empty-state">
+            <div class="emoji">👤</div>
+            <p>No candidates registered yet. Share the registration link from Settings!</p>
+          </div>
+        <% } else { %>
+          <div style="overflow-x:auto">
+            <table class="candidates-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Experience</th>
+                  <th>Resume</th>
+                  <th>Registered</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% candidates.forEach(c => { %>
+                  <tr>
+                    <td>
+                      <%= c.name %>
+                      <% if (user.emails[0].value === c.email) { %><span class="you-tag">YOU</span><% } %>
+                    </td>
+                    <td class="muted"><%= c.email %></td>
+                    <td><%= c.role || '—' %></td>
+                    <td><span class="badge badge-blue"><%= c.experience %> Years</span></td>
+                    <td>
+                      <% if (c.resume && c.resume.url) { %>
+                        <span class="badge badge-green">✅ Uploaded</span>
+                      <% } else { %>
+                        <span class="badge badge-red">Missing</span>
+                      <% } %>
+                    </td>
+                    <td class="muted"><%= c.registeredAt ? new Date(c.registeredAt).toLocaleDateString('en-IN') : '—' %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+
+      <% if (candidate) { %>
       <div class="section">
         <h2>📋 Your Profile</h2>
         <div class="profile-row">
@@ -100,62 +274,208 @@
           </div>
           <div class="profile-item">
             <div class="profile-label">STATUS</div>
-            <div class="profile-value" style="color:#00d4ff">✅ Active</div>
+            <div class="profile-value" style="color:var(--accent)">✅ Active</div>
           </div>
         </div>
       </div>
-    <% } else { %>
-      <div class="section">
-        <div class="not-registered">
-          <div style="font-size:50px;margin-bottom:15px">⚠️</div>
-          <p>You haven't completed your registration yet!</p>
-          <a href="/register" class="btn">Complete Registration</a>
-        </div>
-      </div>
-    <% } %>
-
-    <div class="section">
-      <h2>⏰ Automation Schedule</h2>
-      <div class="schedule-info">
-        <div class="schedule-time">Every Day 9:00 AM IST</div>
-        <div class="schedule-desc">
-          Script automatically scrapes D365 jobs → Finds HR emails → AI writes personalized email → Sends from YOUR Gmail → Updates Google Sheet
-        </div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>📊 Google Sheet Tracker</h2>
-      <p style="color:#8899aa;margin-bottom:15px">View all jobs applied and their status:</p>
-      <a href="https://docs.google.com/spreadsheets/d/1DZpavtALZ0lyAPbeSEUbsfna3COIumHPWP_G-q8UziY" target="_blank" class="btn">Open Google Sheet 📊</a>
-    </div>
-
-    <div class="section">
-      <h2>👥 All Candidates (<%= candidates.length %>)</h2>
-      <% if (candidates.length === 0) { %>
-        <p style="color:#8899aa">No candidates registered yet. Share the registration link!</p>
-      <% } else { %>
-        <div class="candidates-list">
-          <% candidates.forEach(c => { %>
-            <div class="candidate-row">
-              <div>
-                <div class="candidate-name"><%= c.name %></div>
-                <div class="candidate-meta"><%= c.email %> · <%= c.role %></div>
-              </div>
-              <span class="badge badge-blue"><%= c.experience %> Years</span>
-            </div>
-          <% }); %>
-        </div>
       <% } %>
     </div>
 
-    <div class="section">
-      <h2>🔗 Share Registration Link</h2>
-      <p style="color:#8899aa;margin-bottom:15px">Share this with all candidates:</p>
-      <div style="background:#0f1923;border-radius:8px;padding:15px;font-family:monospace;color:#00d4ff;word-break:break-all">
-        https://d365-job-hunter-app.vercel.app/register
+    <!-- ============ SETTINGS TAB ============ -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="section">
+        <h2>🔗 Share Registration Link</h2>
+        <p class="muted" style="margin-bottom:15px">Share this with all candidates:</p>
+        <div class="mono-box">https://d365-job-hunter-app.vercel.app/register</div>
+      </div>
+
+      <div class="section">
+        <h2>📊 Google Sheet Tracker</h2>
+        <p class="muted" style="margin-bottom:15px">View every job applied to and its status:</p>
+        <a href="<%= sheetUrl %>" target="_blank" class="btn btn-primary">Open Google Sheet 📊</a>
+      </div>
+
+      <div class="section">
+        <h2>⚙️ System Status</h2>
+        <div class="status-list">
+          <div class="status-row"><span>🤖 AI Email Writer</span><span class="badge badge-green">Groq · Active</span></div>
+          <div class="status-row"><span>📧 Email Sending</span><span class="badge badge-green">Gmail API · Active</span></div>
+          <div class="status-row"><span>📄 Resume Storage</span><span class="badge badge-green">Vercel Blob · Active</span></div>
+          <div class="status-row"><span>📊 Application Tracking</span><span class="badge badge-green">Google Sheets · Active</span></div>
+          <div class="status-row"><span>⏰ Automation Schedule</span><span class="badge badge-blue">Daily · 9:00 AM IST</span></div>
+        </div>
       </div>
     </div>
   </div>
+
+  <script>
+    // ---- Top-level tabs ----
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        history.replaceState(null, '', '#' + btn.dataset.tab);
+      });
+    });
+    const initialTab = location.hash.replace('#', '');
+    if (initialTab && document.getElementById('tab-' + initialTab)) {
+      document.querySelector(`.tab-btn[data-tab="${initialTab}"]`).click();
+    }
+
+    // ---- Post Job sub-tabs ----
+    document.querySelectorAll('.subtab').forEach(st => {
+      st.addEventListener('click', () => {
+        document.querySelectorAll('.subtab').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.subtab-content').forEach(c => c.classList.remove('active'));
+        st.classList.add('active');
+        document.getElementById('subtab-' + st.dataset.subtab).classList.add('active');
+      });
+    });
+
+    function showAlert(id, type, message) {
+      const box = document.getElementById(id);
+      box.className = 'alert alert-' + type;
+      box.innerHTML = message;
+      box.style.display = 'block';
+    }
+
+    function renderResults(boxId, results) {
+      const box = document.getElementById(boxId);
+      if (!results || results.length === 0) { box.style.display = 'none'; return; }
+      let html = '<h3 style="color:var(--accent);margin-bottom:12px">📧 Results</h3>';
+      results.forEach(r => {
+        html += `<div class="result-row">
+          <span>${r.candidate} → ${r.company}</span>
+          <span>${r.sent ? '<span style="color:var(--success)">✅ Sent</span>' : '<span style="color:var(--danger)">❌ Failed</span>'}</span>
+        </div>`;
+      });
+      box.innerHTML = html;
+      box.style.display = 'block';
+    }
+
+    // ---- Post Job: text submit ----
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+      const text = document.getElementById('textInput').value.trim();
+      if (!text) { showAlert('postJobStatus', 'error', '⚠️ Please paste a job post first!'); return; }
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Sending emails...';
+      showAlert('postJobStatus', 'info', '<span class="spinner-light spinner"></span> AI is reading the post and sending emails to all candidates…');
+      document.getElementById('runNowResults').style.display = 'none';
+
+      try {
+        const res = await fetch('/linkedin/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            email: document.getElementById('emailInput').value,
+            url: document.getElementById('urlInput').value,
+            type: 'text'
+          })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          showAlert('postJobStatus', 'success', `✅ Done! ${data.emailsSent} emails sent successfully from all candidates!`);
+          renderResults('postJobStatus', data.results);
+          document.getElementById('textInput').value = '';
+          document.getElementById('emailInput').value = '';
+          setTimeout(() => location.reload(), 3000);
+        } else {
+          showAlert('postJobStatus', 'error', '❌ ' + (data.error || 'Something went wrong'));
+        }
+      } catch(e) {
+        showAlert('postJobStatus', 'error', '❌ Network error: ' + e.message);
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '🚀 Send Emails to All Candidates NOW!';
+    });
+
+    // ---- Post Job: image upload/preview ----
+    document.getElementById('imageDropArea').addEventListener('click', () => document.getElementById('imageFile').click());
+    document.getElementById('imageFile').addEventListener('change', function() {
+      const file = this.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        document.getElementById('previewImg').src = e.target.result;
+        document.getElementById('imagePreview').style.display = 'block';
+        document.getElementById('uploadText').textContent = '✅ ' + file.name;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('imageSubmitBtn').addEventListener('click', () => {
+      const file = document.getElementById('imageFile').files[0];
+      if (!file) { showAlert('postJobStatus', 'error', '⚠️ Please upload an image first!'); return; }
+
+      const btn = document.getElementById('imageSubmitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Reading image and sending emails...';
+      showAlert('postJobStatus', 'info', '<span class="spinner-light spinner"></span> AI is reading the image and sending emails to all candidates…');
+
+      const reader = new FileReader();
+      reader.onload = async e => {
+        try {
+          const res = await fetch('/linkedin/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: e.target.result,
+              email: document.getElementById('imageEmailInput').value,
+              type: 'image'
+            })
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            showAlert('postJobStatus', 'success', `✅ Done! ${data.emailsSent} emails sent successfully!`);
+            renderResults('postJobStatus', data.results);
+            setTimeout(() => location.reload(), 3000);
+          } else {
+            showAlert('postJobStatus', 'error', '❌ ' + (data.error || 'Something went wrong'));
+          }
+        } catch(e) {
+          showAlert('postJobStatus', 'error', '❌ Error: ' + e.message);
+        }
+        btn.disabled = false;
+        btn.innerHTML = '🚀 Send Emails to All Candidates NOW!';
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // ---- Run Now ----
+    document.getElementById('runNowBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('runNowBtn');
+      const status = document.getElementById('runNowStatus');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Running…';
+      status.textContent = 'This can take a minute or two — scraping jobs, finding HR contacts, writing and sending emails. Don\'t close this tab.';
+      document.getElementById('runNowResults').style.display = 'none';
+
+      try {
+        const res = await fetch('/api/run-now', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+          status.textContent = `✅ Done! ${data.emailsSent || 0} emails sent across ${data.candidates || 0} candidates.`;
+          renderResults('runNowResults', data.results);
+          setTimeout(() => location.reload(), 4000);
+        } else {
+          status.textContent = '❌ ' + (data.error || data.message || 'Something went wrong');
+        }
+      } catch(e) {
+        status.textContent = '❌ Network error: ' + e.message;
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '▶️ Run Scraper Now';
+    });
+  </script>
 </body>
 </html>
