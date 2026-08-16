@@ -1,5 +1,7 @@
 const { google } = require("googleapis");
 const Groq = require("groq-sdk");
+const { tailorResumeText, generatePDF, uploadTailoredResume } = require("./tailor-resume");
+const { saveApplication } = require("../lib/history");
 
 const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
 const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY;
@@ -205,7 +207,7 @@ ${candidate.name}`;
   return { subject, body: bodyLines.join("\n").trim() };
 }
 
-async function sendGmail(candidate, to, subject, body) {
+async function sendGmail(candidate, to, subject, body, job) {
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -214,20 +216,41 @@ async function sendGmail(candidate, to, subject, body) {
   oauth2Client.setCredentials({ refresh_token: candidate.refreshToken });
   const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
-  // Get resume from Vercel Blob and attach
+  // Generate tailored resume for this specific job
   let resumeBuffer = null;
-  let resumeFilename = "Resume.pdf";
+  let resumeFilename = `${candidate.name.replace(/\s/g,"_")}_${job.company.replace(/\s/g,"_")}_Resume.pdf`;
+  let resumeMimeType = "application/pdf";
+
   try {
-    if (candidate.resume && candidate.resume.url) {
-      const response = await fetch(candidate.resume.url);
-      if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        resumeBuffer = Buffer.from(arrayBuffer);
-        resumeFilename = candidate.resume.filename || "Resume.pdf";
+    console.log(`📄 Tailoring resume for ${candidate.name} → ${job.company}...`);
+    const tailoredData = await tailorResumeText(candidate, job);
+    if (tailoredData) {
+      const pdfBuffer = await generatePDF(tailoredData, candidate, job);
+      if (pdfBuffer) {
+        resumeBuffer = pdfBuffer;
+        console.log(`✅ Tailored PDF generated for ${candidate.name}`);
+        uploadTailoredResume(pdfBuffer, candidate.id, job.company).catch(e => console.log("Blob upload error:", e.message));
       }
     }
+    if (!resumeBuffer && candidate.resume && candidate.resume.url) {
+      const response = await fetch(candidate.resume.url);
+      const arrayBuffer = await response.arrayBuffer();
+      resumeBuffer = Buffer.from(arrayBuffer);
+      resumeFilename = candidate.resume.filename || resumeFilename;
+      resumeMimeType = candidate.resume.mimeType || resumeMimeType;
+      console.log(`⚠️ Using original resume for ${candidate.name}`);
+    }
   } catch(e) {
-    console.log("Resume fetch error:", e.message);
+    console.log(`Resume error ${candidate.name}:`, e.message);
+    if (candidate.resume && candidate.resume.url) {
+      try {
+        const response = await fetch(candidate.resume.url);
+        const arrayBuffer = await response.arrayBuffer();
+        resumeBuffer = Buffer.from(arrayBuffer);
+        resumeFilename = candidate.resume.filename || resumeFilename;
+        resumeMimeType = candidate.resume.mimeType || resumeMimeType;
+      } catch(e2) {}
+    }
   }
 
   // Build MIME email with attachment
@@ -249,7 +272,7 @@ async function sendGmail(candidate, to, subject, body) {
       body,
       ``,
       `--${boundary}`,
-      `Content-Type: ${candidate.resume?.mimeType || 'application/pdf'}`,
+      `Content-Type: ${resumeMimeType}`,
       `Content-Transfer-Encoding: base64`,
       `Content-Disposition: attachment; filename="${resumeFilename}"`,
       ``,
@@ -339,9 +362,17 @@ module.exports = async (req, res) => {
   const results = [];
 
   try {
-    const candidates = await getCandidates();
+    let candidates = await getCandidates();
     if (candidates.length === 0) {
       return res.json({ success: false, error: "No candidates registered yet!" });
+    }
+    // Filter to specific candidate if requested
+    const { candidateId } = req.body;
+    if (candidateId && candidateId !== "all") {
+      candidates = candidates.filter(c => c.id === candidateId);
+      if (candidates.length === 0) {
+        return res.json({ success: false, error: "Candidate not found!" });
+      }
     }
 
     // Parse job details from text or image
@@ -396,13 +427,21 @@ module.exports = async (req, res) => {
         const { subject, body } = await generateEmail(candidate, job, groq, jobDetails.recruiterName);
         let sent = false;
         try {
-          await sendGmail(candidate, hrEmail, subject, body);
+          await sendGmail(candidate, hrEmail, subject, body, job);
           sent = true;
         } catch(e) {
           console.log(`❌ Gmail ${candidate.name}:`, e.message);
         }
         await updateSheet(candidate, job, hrEmail, subject, sent);
         results.push({ candidate: candidate.name, company: job.company, hrEmail, sent });
+        await saveApplication({
+          candidateName: candidate.name,
+          candidateEmail: candidate.email,
+          company: job.company,
+          hrEmail,
+          subject,
+          sent
+        });
         // Small delay between candidates - safe for Vercel timeout
         await new Promise(r => setTimeout(r, 3000));
       } catch(e) {

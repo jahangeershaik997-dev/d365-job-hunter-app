@@ -35,6 +35,32 @@
     .results-box { background: var(--bg-inset); border-radius: var(--radius-sm); padding: 20px; margin-top: 15px; display: none; border: 1px solid var(--border); }
     .result-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
     .result-row:last-child { border-bottom: none; }
+
+    .send-section { margin-top: 20px; }
+    .send-section-title { color: var(--accent); margin-bottom: 15px; font-size: 16px; }
+    .candidate-btn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 15px; }
+    .candidate-btn {
+      padding: 12px 16px; background: var(--bg-inset); border: 1px solid var(--accent);
+      color: var(--accent); border-radius: var(--radius-sm); cursor: pointer; font-size: 14px;
+      font-weight: 600; font-family: inherit; text-align: left; min-height: 44px; transition: background 0.15s ease;
+    }
+    .candidate-btn:hover { background: var(--accent-dim); }
+    .candidate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .candidate-btn small { display: block; color: var(--text-muted); font-weight: 400; margin-top: 2px; }
+
+    .history-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .history-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 620px; }
+    .history-table th { text-align: left; padding: 12px; background: var(--bg-inset); color: var(--text-muted); white-space: nowrap; }
+    .history-table td { padding: 12px; border-bottom: 1px solid var(--border); }
+    .history-table td.h-candidate { color: var(--accent); font-weight: 600; }
+    .history-table td.h-email { color: var(--text-muted); word-break: break-word; }
+    .history-count { color: var(--text-muted); margin-top: 10px; font-size: 12px; }
+
+    @media (max-width: 480px) {
+      .candidate-btn-grid { grid-template-columns: 1fr; }
+      .btn { padding: 13px 20px; font-size: 15px; }
+      input, select, textarea { font-size: 16px; }
+    }
   </style>
 </head>
 <body>
@@ -54,6 +80,7 @@
       <button class="tab-btn active" data-tab="overview">Dashboard</button>
       <button class="tab-btn" data-tab="postjob">Post Job</button>
       <button class="tab-btn" data-tab="candidates">Candidates</button>
+      <button class="tab-btn" data-tab="history">History</button>
       <button class="tab-btn" data-tab="settings">Settings</button>
     </div>
 
@@ -152,7 +179,14 @@
             <label>Post URL (optional)</label>
             <input type="url" id="urlInput" placeholder="https://linkedin.com/posts/...">
           </div>
-          <button class="btn btn-primary btn-block" id="submitBtn">🚀 Send Emails to All Candidates NOW!</button>
+
+          <div class="send-section">
+            <h3 class="send-section-title">📧 Send From:</h3>
+            <button class="btn btn-primary btn-block" id="sendAllBtn">🚀 Send From ALL Candidates</button>
+            <div class="candidate-btn-grid" id="candidateButtons">
+              <p class="muted">Loading candidates…</p>
+            </div>
+          </div>
         </div>
 
         <div id="subtab-image" class="subtab-content">
@@ -231,7 +265,7 @@
                   <tr>
                     <td>
                       <%= c.name %>
-                      <% if (user.emails[0].value === c.email) { %><span class="you-tag">YOU</span><% } %>
+                      <% if (user.email === c.email) { %><span class="you-tag">YOU</span><% } %>
                     </td>
                     <td class="muted"><%= c.email %></td>
                     <td><%= c.role || '—' %></td>
@@ -279,6 +313,16 @@
         </div>
       </div>
       <% } %>
+    </div>
+
+    <!-- ============ HISTORY TAB ============ -->
+    <div class="tab-panel" id="tab-history">
+      <div class="section">
+        <h2>📋 Application History</h2>
+        <div id="historyContainer">
+          <p class="muted">Loading…</p>
+        </div>
+      </div>
     </div>
 
     <!-- ============ SETTINGS TAB ============ -->
@@ -355,16 +399,19 @@
       box.style.display = 'block';
     }
 
-    // ---- Post Job: text submit ----
-    document.getElementById('submitBtn').addEventListener('click', async () => {
+    // ---- Post Job: text submit (ALL or one specific candidate) ----
+    async function submitPost(candidateId) {
       const text = document.getElementById('textInput').value.trim();
       if (!text) { showAlert('postJobStatus', 'error', '⚠️ Please paste a job post first!'); return; }
 
-      const btn = document.getElementById('submitBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Sending emails...';
-      showAlert('postJobStatus', 'info', '<span class="spinner-light spinner"></span> AI is reading the post and sending emails to all candidates…');
-      document.getElementById('runNowResults').style.display = 'none';
+      const allBtn = document.getElementById('sendAllBtn');
+      const specificBtn = document.querySelector(`.candidate-btn[data-id="${candidateId}"]`);
+      const activeBtn = candidateId === 'all' ? allBtn : specificBtn;
+      const activeBtnOriginalHTML = activeBtn ? activeBtn.innerHTML : '';
+
+      document.querySelectorAll('#sendAllBtn, .candidate-btn').forEach(b => b.disabled = true);
+      if (activeBtn) activeBtn.innerHTML = '<span class="spinner"></span> Sending…';
+      showAlert('postJobStatus', 'info', `<span class="spinner-light spinner"></span> AI is reading the post and sending emails from ${candidateId === 'all' ? 'ALL candidates' : 'the selected candidate'}…`);
 
       try {
         const res = await fetch('/linkedin/submit', {
@@ -374,17 +421,18 @@
             text,
             email: document.getElementById('emailInput').value,
             url: document.getElementById('urlInput').value,
-            type: 'text'
+            type: 'text',
+            candidateId
           })
         });
         const data = await res.json();
 
         if (data.success) {
-          showAlert('postJobStatus', 'success', `✅ Done! ${data.emailsSent} emails sent successfully from all candidates!`);
+          showAlert('postJobStatus', 'success', `✅ Done! ${data.emailsSent} emails sent!`);
           renderResults('postJobStatus', data.results);
           document.getElementById('textInput').value = '';
           document.getElementById('emailInput').value = '';
-          setTimeout(() => location.reload(), 3000);
+          loadHistory();
         } else {
           showAlert('postJobStatus', 'error', '❌ ' + (data.error || 'Something went wrong'));
         }
@@ -392,9 +440,80 @@
         showAlert('postJobStatus', 'error', '❌ Network error: ' + e.message);
       }
 
-      btn.disabled = false;
-      btn.innerHTML = '🚀 Send Emails to All Candidates NOW!';
-    });
+      document.querySelectorAll('#sendAllBtn, .candidate-btn').forEach(b => b.disabled = false);
+      if (activeBtn) activeBtn.innerHTML = activeBtnOriginalHTML;
+    }
+
+    document.getElementById('sendAllBtn').addEventListener('click', () => submitPost('all'));
+
+    // ---- Post Job: load per-candidate send buttons ----
+    async function loadCandidateButtons() {
+      try {
+        const res = await fetch('/api/candidates');
+        const data = await res.json();
+        const container = document.getElementById('candidateButtons');
+        if (!data.candidates || data.candidates.length === 0) {
+          container.innerHTML = '<p class="muted">No candidates registered</p>';
+          return;
+        }
+        container.innerHTML = data.candidates.map(c => `
+          <button class="candidate-btn" data-id="${c.id}">
+            👤 ${c.name}
+            <small>${c.experience || '—'}yr exp</small>
+          </button>
+        `).join('');
+        container.querySelectorAll('.candidate-btn').forEach(btn => {
+          btn.addEventListener('click', () => submitPost(btn.dataset.id));
+        });
+      } catch(e) {
+        console.log('Error loading candidates:', e);
+      }
+    }
+
+    // ---- History tab ----
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/history');
+        const data = await res.json();
+        const container = document.getElementById('historyContainer');
+        if (!data.history || data.history.length === 0) {
+          container.innerHTML = '<div class="empty-state"><div class="emoji">📭</div><p>No applications sent yet</p></div>';
+          return;
+        }
+        container.innerHTML = `
+          <div class="history-table-wrap">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Candidate</th>
+                  <th>Company</th>
+                  <th>HR Email</th>
+                  <th>Status</th>
+                  <th>Date &amp; Time (IST)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.history.map(h => `
+                  <tr>
+                    <td class="h-candidate">${h.candidateName || ''}</td>
+                    <td>${h.company || ''}</td>
+                    <td class="h-email">${h.hrEmail || ''}</td>
+                    <td><span class="badge ${h.sent ? 'badge-green' : 'badge-red'}">${h.sent ? '✅ Sent' : '❌ Failed'}</span></td>
+                    <td class="muted">${h.timestamp || ''}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <p class="history-count">Total: ${data.history.length} applications</p>
+        `;
+      } catch(e) {
+        console.log('History error:', e);
+      }
+    }
+
+    loadCandidateButtons();
+    loadHistory();
 
     // ---- Post Job: image upload/preview ----
     document.getElementById('imageDropArea').addEventListener('click', () => document.getElementById('imageFile').click());

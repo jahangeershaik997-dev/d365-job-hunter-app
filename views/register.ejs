@@ -36,7 +36,7 @@
     <% } else { %>
       <div class="step-box">
         <div class="step-title">✅ LOGGED IN AS</div>
-        <div class="step-desc"><%= user.displayName %> · <%= user.emails[0].value %></div>
+        <div class="step-desc"><%= user.displayName %> · <%= user.email %></div>
       </div>
 
       <form action="/register" method="POST" enctype="multipart/form-data">

@@ -1,10 +1,12 @@
 const express = require("express");
 const path = require("path");
-const session = require("express-session");
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const multer = require("multer");
 const Groq = require("groq-sdk");
+const { createSession, destroySession, COOKIE_NAME } = require("./lib/session");
+const { loadSession } = require("./middleware/auth");
+const { getApplicationHistory } = require("./lib/history");
 
 const app = express();
 
@@ -18,28 +20,22 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-app.use(session({
-  secret: process.env.SESSION_SECRET || "d365secret",
-  resave: false,
-  saveUninitialized: false
-}));
-
+app.use(loadSession);
 app.use(passport.initialize());
-app.use(passport.session());
 
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   callbackURL: "https://d365-job-hunter-app.vercel.app/auth/callback"
 }, (accessToken, refreshToken, profile, done) => {
-  // Save BOTH tokens to profile
-  profile.accessToken = accessToken;
-  profile.refreshToken = refreshToken;
-  return done(null, profile);
+  return done(null, {
+    id: profile.id,
+    displayName: profile.displayName,
+    email: profile.emails[0].value,
+    accessToken,
+    refreshToken
+  });
 }));
-
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((user, done) => done(null, user));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -169,7 +165,7 @@ app.post("/register", upload.single("resume"), async (req, res) => {
     await saveCandidate({
       id: candidateId,
       name: req.body.name || req.user.displayName,
-      email: req.user.emails[0].value,
+      email: req.user.email,
       experience: req.body.experience,
       role: req.body.role || parsedDetails.currentRole || "",
       accessToken: req.user.accessToken,
@@ -201,7 +197,7 @@ app.post("/register", upload.single("resume"), async (req, res) => {
 app.get("/dashboard", async (req, res) => {
   if (!req.user) return res.redirect("/");
   const candidates = await getCandidates();
-  const me = candidates.find(c => c.email === req.user.emails[0].value);
+  const me = candidates.find(c => c.email === req.user.email);
   const posts = await getLinkedInPosts();
   res.render("dashboard", {
     user: req.user,
@@ -243,13 +239,63 @@ app.get("/auth/google", passport.authenticate("google", {
 }));
 
 app.get("/auth/callback", passport.authenticate("google", {
-  failureRedirect: "/"
-}), (req, res) => {
-  res.redirect("/register");
+  failureRedirect: "/",
+  session: false
+}), async (req, res) => {
+  try {
+    const sessionId = await createSession({
+      id: req.user.id,
+      displayName: req.user.displayName,
+      email: req.user.email,
+      accessToken: req.user.accessToken,
+      refreshToken: req.user.refreshToken
+    });
+    res.setHeader("Set-Cookie",
+      `${COOKIE_NAME}=${encodeURIComponent(sessionId)}; Max-Age=${60*60*24*30}; Path=/; HttpOnly; SameSite=Lax`
+    );
+    res.redirect("/register");
+  } catch(e) {
+    console.error("Session error:", e);
+    res.redirect("/");
+  }
 });
 
-app.get("/logout", (req, res) => {
-  req.logout(() => res.redirect("/"));
+app.get("/logout", async (req, res) => {
+  try {
+    if (req.sessionId) await destroySession(req.sessionId);
+    res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`);
+  } catch(e) {}
+  res.redirect("/");
+});
+
+app.get("/api/candidates", async (req, res) => {
+  if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
+  try {
+    const candidates = await getCandidates();
+    res.json({
+      success: true,
+      candidates: candidates.map(c => ({
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        experience: c.experience,
+        role: c.role,
+        registeredAt: c.registeredAt
+      }))
+    });
+  } catch(e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.get("/api/history", async (req, res) => {
+  if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
+  try {
+    const history = await getApplicationHistory();
+    res.json({ success: true, history });
+  } catch(e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 if (require.main === module) {
