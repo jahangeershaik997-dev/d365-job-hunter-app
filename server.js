@@ -223,12 +223,13 @@ app.post("/linkedin/submit", async (req, res) => {
 
 // Dashboard "Run Now" button: manually triggers the scrape + apply job
 app.post("/api/run-now", async (req, res) => {
-  if (!req.user) return res.status(401).json({ error: "Not logged in" });
+  if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
   try {
-    const runHandler = require("./api/send-daily-applications");
-    await runHandler(req, res);
+    const handler = require("./api/send-daily-applications");
+    await handler(req, res);
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    console.log("Run now error:", e.message);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
@@ -271,7 +272,14 @@ app.get("/logout", async (req, res) => {
 app.get("/api/candidates", async (req, res) => {
   if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
   try {
-    const candidates = await getCandidates();
+    const resBin = await fetch(
+      `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_BIN_ID || JSONBIN_BIN_ID}/latest`,
+      { headers: { "X-Master-Key": process.env.JSONBIN_MASTER_KEY || JSONBIN_MASTER_KEY } }
+    );
+    const data = await resBin.json();
+    const candidates = Array.isArray(data.record)
+      ? data.record.filter(c => !c.init && c.email && c.name)
+      : [];
     res.json({
       success: true,
       candidates: candidates.map(c => ({
@@ -284,17 +292,30 @@ app.get("/api/candidates", async (req, res) => {
       }))
     });
   } catch(e) {
+    console.log("Candidates error:", e.message);
     res.status(500).json({ success: false, error: e.message });
   }
+});
+
+app.get("/api/session-check", (req, res) => {
+  res.json({
+    loggedIn: !!req.user,
+    user: req.user ? {
+      name: req.user.displayName,
+      email: req.user.email
+    } : null,
+    sessionId: req.sessionId || null
+  });
 });
 
 app.get("/api/history", async (req, res) => {
   if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
   try {
     const history = await getApplicationHistory();
-    res.json({ success: true, history });
+    res.json({ success: true, history: history || [] });
   } catch(e) {
-    res.status(500).json({ success: false, error: e.message });
+    console.log("History error:", e.message);
+    res.json({ success: true, history: [] });
   }
 });
 

@@ -21,18 +21,32 @@ async function getCandidates() {
 function isRealPersonEmail(email) {
   if (!email) return false;
   const local = email.split("@")[0].toLowerCase();
-  const blacklist = ["hr", "careers", "career", "recruitment", "recruit", "jobs", "job",
-    "info", "contact", "admin", "support", "hello", "team", "talent", "india",
-    "noreply", "no-reply", "hiring", "apply", "applications", "application",
-    "staffing", "staff", "people", "humanresources", "acquisition", "resumes",
-    "resume", "work", "opportunity", "connect", "recruiting"];
-  const parts = local.split(".");
-  for (const part of parts) {
-    if (blacklist.includes(part)) return false;
+
+  // Only block clearly generic department emails
+  const blacklist = [
+    "hr", "careers", "career", "recruitment", "jobs", "job",
+    "info", "contact", "admin", "support", "hello", "team",
+    "noreply", "no-reply", "hiring", "apply", "staffing",
+    "humanresources", "enquiry", "enquiries", "recruiting",
+    "joinus", "getintouch", "talent", "resumes", "resume"
+  ];
+
+  // If has dot - firstname.lastname format
+  if (local.includes(".")) {
+    const parts = local.split(".");
+    // Reject if the first part alone is a blacklisted department word
+    // e.g. hr.manager = reject, kumar.unnati = allow
+    if (blacklist.includes(parts[0])) return false;
+    return true;
   }
-  if (!/^[a-z][a-z.]+[a-z]$/.test(local)) return false;
-  if (local.length < 3) return false;
-  return true;
+
+  // Single word - check blacklist
+  if (blacklist.includes(local)) return false;
+
+  // Single word not blacklisted, min 3 chars
+  if (local.length >= 3 && /^[a-z]+$/.test(local)) return true;
+
+  return false;
 }
 
 async function parseJobPost(text, groq) {
