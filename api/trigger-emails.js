@@ -102,47 +102,78 @@ async function generateEmail(candidate, job, groq, recruiterName = null) {
   const jobSkills = Array.isArray(job.skills) ? job.skills.join(", ") :
     (job.skills || "D365 CRM development");
 
-  const prompt = `Write a professional job application email.
+  const emailStyles = [
+    "formal and authoritative",
+    "confident and direct",
+    "enthusiastic and engaging",
+    "concise and impactful"
+  ];
 
-STRICT RULES:
-- Use ONLY facts from this candidate's profile - never invent experience or clients
-- Write from ${candidate.name}'s perspective
-- Be CONFIDENT and PROFESSIONAL
-- Each candidate should have a UNIQUE email highlighting THEIR specific experience
+  const openings = [
+    `I came across this opportunity and felt compelled to reach out`,
+    `Your posting caught my attention immediately`,
+    `I'm reaching out regarding the ${job.title} role`,
+    `Having reviewed the requirements for this position`
+  ];
+
+  const randomStyle = emailStyles[Math.floor(Math.random() * emailStyles.length)];
+  const randomOpening = openings[Math.floor(Math.random() * openings.length)];
+
+  const prompt = `Write a UNIQUE ${randomStyle} job application email.
+
+IMPORTANT: This email MUST be completely different in structure, tone and wording from a standard template. No two candidates should sound the same.
+
+Opening line to use: "${randomOpening}"
 
 CANDIDATE PROFILE:
 Name: ${candidate.name}
-Experience: ${candidate.experience}+ years Microsoft Dynamics 365 CRM Developer
+Experience: ${candidate.experience}+ years Microsoft Dynamics 365 CRM
 Phone: ${candidate.phone || 'available on request'}
-LinkedIn: ${candidate.linkedin || ''}
-Key Skills: ${Array.isArray(candidate.skills) ? candidate.skills.join(', ') : candidate.skills || 'D365 CRM, C#.NET, Power Platform'}
-Clients/Projects: ${candidate.clients || ''}
+Key Skills: ${Array.isArray(candidate.skills) ? candidate.skills.join(', ') : 'D365 CRM, C#.NET, Power Platform'}
+Clients/Projects: ${candidate.clients || 'Enterprise CRM implementations'}
 Certifications: ${candidate.certifications || ''}
 Summary: ${candidate.summary || ''}
-Resume Text: ${(candidate.resumeText || '').substring(0, 500)}
+Resume highlights: ${(candidate.resumeText || '').substring(0, 400)}
 
 JOB DETAILS:
 Title: ${job.title}
 Company: ${job.company}
 Location: ${job.location}
-Requirements: ${jobSkills}
+Requirements: ${Array.isArray(job.skills) ? job.skills.join(', ') : job.skills || ''}
 
-EMAIL STRUCTURE (follow exactly):
-1. Subject: [${candidate.experience}+ Years D365 CRM Developer] | [Job Title] at [Company]
-2. Greeting: ${greeting},
-3. One line: who you are (name + experience + specialization)
-4. "Here's what I bring to ${job.company}:"
-   • [Skill 1 from THEIR profile] — [specific achievement]
-   • [Skill 2 from THEIR profile] — [specific achievement]
-   • [Skill 3 from THEIR profile] — [specific achievement]
-5. "I'd love a quick 15-minute call to explore how I can contribute."
-6. Contact:
-   📱 ${candidate.phone || 'Available on request'}
-   🔗 ${candidate.linkedin || ''}
-   ✉️ ${candidate.email}
-7. Best regards, ${candidate.name}
+STRICT RULES:
+- Use ONLY facts from candidate profile - NEVER invent experience
+- Style: ${randomStyle}
+- Opening: use the opening line provided
+- Highlight 2-3 skills most relevant to THIS specific job
+- Each bullet point must reference candidate's REAL experience
+- Call to action must feel natural not forced
+- Max 130 words
+- NO generic phrases like "I am excited" or "perfect fit"
+- Contact at end: 📱 ${candidate.phone || 'Available on request'} | ✉️ ${candidate.email}
 
-Write ONLY the email. Follow structure exactly. Use candidate's REAL experience only.`;
+EMAIL STRUCTURE:
+SUBJECT: [unique compelling subject - different format each time]
+
+BODY:
+[Greeting],
+
+[Opening line]
+
+[One sentence who they are]
+
+Here's what I bring:
+- [Skill 1] — [real achievement from their profile]
+- [Skill 2] — [real achievement from their profile]
+- [Skill 3] — [real achievement from their profile]
+
+[Unique call to action]
+
+📱 ${candidate.phone || 'Available on request'}
+✉️ ${candidate.email}
+
+Best regards,
+${candidate.name}`;
 
   const response = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
@@ -161,6 +192,7 @@ Write ONLY the email. Follow structure exactly. Use candidate's REAL experience 
       subject = line.replace(/^subject:\s*/i, "").trim();
       foundSubject = true;
     } else if (foundSubject) {
+      if (line.trim().toLowerCase() === "body:") continue;
       bodyLines.push(line);
     }
   }
@@ -371,7 +403,10 @@ module.exports = async (req, res) => {
         }
         await updateSheet(candidate, job, hrEmail, subject, sent);
         results.push({ candidate: candidate.name, company: job.company, hrEmail, sent });
-        await new Promise(r => setTimeout(r, 1500));
+        // Random delay between 4-7 minutes between each candidate
+        const delayMs = (Math.floor(Math.random() * 3) + 4) * 60 * 1000;
+        console.log(`⏳ Waiting ${delayMs/60000} minutes before next candidate...`);
+        await new Promise(r => setTimeout(r, delayMs));
       } catch(e) {
         results.push({ candidate: candidate.name, company: job.company, hrEmail, sent: false });
       }
