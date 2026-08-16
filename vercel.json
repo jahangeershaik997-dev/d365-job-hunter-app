@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/send-daily-applications",
-      "schedule": "30 3 * * *"
+      "schedule": "0 * * * *"
     }
   ],
   "functions": {

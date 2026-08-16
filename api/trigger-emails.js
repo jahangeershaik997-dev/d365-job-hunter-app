@@ -2,6 +2,7 @@ const { google } = require("googleapis");
 const Groq = require("groq-sdk");
 const { tailorResumeText, generatePDF, uploadTailoredResume } = require("./tailor-resume");
 const { saveApplication } = require("../lib/history");
+const { alreadySent, markAsSent } = require("../lib/sent-tracker");
 
 const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
 const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY;
@@ -438,11 +439,27 @@ module.exports = async (req, res) => {
     // Send from ALL candidates
     for (const candidate of candidates) {
       try {
+        // CHECK: Already sent to this HR from this candidate?
+        const isDuplicate = await alreadySent(candidate.email, hrEmail);
+        if (isDuplicate) {
+          console.log(`⏭ Skip duplicate: ${candidate.name} → ${hrEmail}`);
+          results.push({
+            candidate: candidate.name,
+            company: job.company,
+            hrEmail,
+            sent: false,
+            reason: "Already sent"
+          });
+          continue;
+        }
+
         const { subject, body } = await generateEmail(candidate, job, groq, jobDetails.recruiterName);
         let sent = false;
         try {
           await sendGmail(candidate, hrEmail, subject, body, job);
           sent = true;
+          // Mark as sent to prevent duplicates
+          await markAsSent(candidate.email, hrEmail);
         } catch(e) {
           console.log(`❌ Gmail ${candidate.name}:`, e.message);
         }

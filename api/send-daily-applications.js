@@ -1,5 +1,6 @@
 const { google } = require("googleapis");
 const Groq = require("groq-sdk");
+const { alreadySent, markAsSent } = require("../lib/sent-tracker");
 
 const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
 const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY;
@@ -297,11 +298,18 @@ module.exports = async (req, res) => {
 
       for (const candidate of candidates) {
         try {
+          const isDuplicate = await alreadySent(candidate.email, hrEmail);
+          if (isDuplicate) {
+            console.log(`⏭ Skip duplicate: ${candidate.name} → ${hrEmail}`);
+            continue;
+          }
+
           const { subject, body } = await generateEmail(candidate, job, groq, false, hr.name);
           let sent = false;
           try {
             await sendGmail(candidate, hrEmail, subject, body);
             sent = true;
+            if (sent) await markAsSent(candidate.email, hrEmail);
           } catch(e) {
             console.log(`❌ ${candidate.name}:`, e.message);
           }
@@ -348,11 +356,18 @@ module.exports = async (req, res) => {
 
         for (const candidate of candidates) {
           try {
+            const isDuplicate = await alreadySent(candidate.email, hrEmail);
+            if (isDuplicate) {
+              console.log(`⏭ Skip duplicate: ${candidate.name} → ${hrEmail}`);
+              continue;
+            }
+
             const { subject, body } = await generateEmail(candidate, job, groq, true, details.recruiterName || apolloName);
             let sent = false;
             try {
               await sendGmail(candidate, hrEmail, subject, body);
               sent = true;
+              if (sent) await markAsSent(candidate.email, hrEmail);
             } catch(e) {
               console.log(`❌ ${candidate.name}:`, e.message);
             }

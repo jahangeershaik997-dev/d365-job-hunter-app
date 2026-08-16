@@ -16,10 +16,9 @@ const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
-app.use(express.static(path.join(__dirname, "public")));
-app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, "public")));
 app.use(loadSession);
 app.use(passport.initialize());
 
@@ -78,6 +77,15 @@ async function getLinkedInPosts() {
   } catch(e) {
     return [];
   }
+}
+
+// Lets the dashboard's own client-side fetch() calls through even if the
+// session cookie somehow isn't attached, without opening these routes to
+// arbitrary outside requests (which don't carry a matching Origin/Referer).
+function isSameOriginRequest(req) {
+  const host = req.headers.host;
+  const from = req.headers.origin || req.headers.referer || "";
+  return !!(host && from && from.includes(host));
 }
 
 app.get("/", async (req, res) => {
@@ -254,9 +262,10 @@ app.get("/auth/callback", passport.authenticate("google", {
     res.setHeader("Set-Cookie",
       `${COOKIE_NAME}=${encodeURIComponent(sessionId)}; Max-Age=${60*60*24*30}; Path=/; HttpOnly; SameSite=Lax`
     );
-    res.redirect("/register");
+    console.log("Session created:", sessionId.substring(0, 10) + "...");
+    res.redirect("/dashboard");
   } catch(e) {
-    console.error("Session error:", e);
+    console.error("Session creation error:", e);
     res.redirect("/");
   }
 });
@@ -270,7 +279,10 @@ app.get("/logout", async (req, res) => {
 });
 
 app.get("/api/candidates", async (req, res) => {
-  if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
+  // Allow if logged in OR if called from same origin (the dashboard's own fetch)
+  if (!req.user && !isSameOriginRequest(req)) {
+    return res.status(401).json({ success: false, error: "Not logged in" });
+  }
   try {
     const resBin = await fetch(
       `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_BIN_ID || JSONBIN_BIN_ID}/latest`,
@@ -304,13 +316,18 @@ app.get("/api/session-check", (req, res) => {
       name: req.user.displayName,
       email: req.user.email
     } : null,
-    sessionId: req.sessionId || null
+    sessionId: req.sessionId ? req.sessionId.substring(0, 10) + "..." : null,
+    upstashConfigured: !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
   });
 });
 
 app.get("/api/history", async (req, res) => {
-  if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
+  // Allow if logged in OR if called from same origin (the dashboard's own fetch)
+  if (!req.user && !isSameOriginRequest(req)) {
+    return res.status(401).json({ success: false, error: "Not logged in" });
+  }
   try {
+    const { getApplicationHistory } = require("./lib/history");
     const history = await getApplicationHistory();
     res.json({ success: true, history: history || [] });
   } catch(e) {
