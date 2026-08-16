@@ -405,9 +405,61 @@ module.exports = async (req, res) => {
     console.log("Parsed job:", JSON.stringify(jobDetails));
 
     // Find HR email
-    const hrEmail = (email && isRealPersonEmail(email)) ? email :
-                    (jobDetails.recruiterEmail && isRealPersonEmail(jobDetails.recruiterEmail)) ? 
-                    jobDetails.recruiterEmail : null;
+    let hrEmail = null;
+    let recruiterName = jobDetails.recruiterName || null;
+
+    // Step 1: Use provided email
+    if (email && isRealPersonEmail(email)) {
+      hrEmail = email;
+      console.log(`✅ Using provided email: ${email}`);
+    }
+
+    // Step 2: Use email from post text
+    if (!hrEmail && jobDetails.recruiterEmail &&
+        isRealPersonEmail(jobDetails.recruiterEmail)) {
+      hrEmail = jobDetails.recruiterEmail;
+      console.log(`✅ Using email from post: ${hrEmail}`);
+    }
+
+    // Step 3: Auto-find via Apollo if no email found
+    if (!hrEmail && jobDetails.company) {
+      console.log(`🔍 Apollo searching HR at: ${jobDetails.company}`);
+      try {
+        const apolloRes = await fetch(
+          "https://api.apollo.io/api/v1/mixed_people/search",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Api-Key": process.env.APOLLO_API_KEY
+            },
+            body: JSON.stringify({
+              q_organization_name: jobDetails.company,
+              person_titles: [
+                "Technical Recruiter",
+                "IT Recruiter",
+                "HR Manager",
+                "Talent Acquisition Manager",
+                "Recruitment Manager",
+                "Hiring Manager"
+              ],
+              per_page: 5
+            })
+          }
+        );
+        const apolloData = await apolloRes.json();
+        for (const person of (apolloData.people || [])) {
+          if (person.email && isRealPersonEmail(person.email)) {
+            hrEmail = person.email;
+            recruiterName = person.first_name || null;
+            console.log(`✅ Apollo found: ${recruiterName} - ${hrEmail}`);
+            break;
+          }
+        }
+      } catch(e) {
+        console.log("Apollo error:", e.message);
+      }
+    }
 
     const job = {
       title: jobDetails.title || "D365 Developer",
@@ -432,7 +484,7 @@ module.exports = async (req, res) => {
       return res.json({
         success: false,
         jobDetails,
-        error: `Job parsed successfully! Company: ${job.company}, Title: ${job.title}. But no recruiter email found. Please add the recruiter's email (firstname.lastname@company.com format) in the email field!`
+        error: `Job parsed! Company: ${jobDetails.company}, Title: ${jobDetails.title}. Apollo could not find HR email. Please add recruiter email manually (firstname.lastname@company.com)`
       });
     }
 
@@ -453,7 +505,7 @@ module.exports = async (req, res) => {
           continue;
         }
 
-        const { subject, body } = await generateEmail(candidate, job, groq, jobDetails.recruiterName);
+        const { subject, body } = await generateEmail(candidate, job, groq, recruiterName);
         let sent = false;
         try {
           await sendGmail(candidate, hrEmail, subject, body, job);
