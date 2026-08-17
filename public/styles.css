@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    D365 JOB HUNTER - ENTERPRISE AI SAAS DESIGN SYSTEM
    Dark Futuristic Glassmorphism ($999/mo Architecture)
    ========================================================================== */
@@ -1249,9 +1249,42 @@ textarea {
   border: 1px solid var(--border-subtle);
 }
 
+.diag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.diag-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  text-align: center;
+}
+
+.diag-val {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.diag-lbl {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
 .result-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 14px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 14px;

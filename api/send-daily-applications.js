@@ -1,43 +1,70 @@
+/**
+ * D365 Job Hunter - Daily Application Dispatch Engine
+ * 
+ * Discovers real D365 jobs via lib/job-sources.js, searches verified recruiter
+ * contacts, generates tailored AI application pitches, and dispatches via candidates'
+ * authenticated Gmail accounts.
+ */
+
 const { google } = require("googleapis");
 const Groq = require("groq-sdk");
+const { discoverJobs } = require("../lib/job-sources");
 const { alreadySent, markAsSent } = require("../lib/sent-tracker");
+const { saveApplication } = require("../lib/history");
+const { tailorResumeText, generatePDF, uploadTailoredResume } = require("./tailor-resume");
 
-const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
-const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY;
+const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID || "6a7fe014f5f4af5e29189def";
+const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY || "$2a$10$mOTOfSBdMCPsMoeb7FIaVubVgsRJqsgyheEbJc2nZ6aZ5p3cKzVJa";
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
-const SHEET_REFRESH_TOKEN = process.env.SHEET_REFRESH_TOKEN;
+const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
 
+/**
+ * Loads registered candidates with valid OAuth credentials
+ */
 async function getCandidates() {
-  const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
-    headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
-  });
-  const data = await res.json();
-  return Array.isArray(data.record) ? data.record.filter(c => !c.init && c.refreshToken) : [];
+  try {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.record)
+      ? data.record.filter(c => !c.init && c.email && c.refreshToken)
+      : [];
+  } catch (e) {
+    console.log("Candidates fetch error:", e.message);
+    return [];
+  }
 }
 
+/**
+ * Loads queued/unprocessed LinkedIn posts
+ */
 async function getLinkedInPosts() {
   try {
-    const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
     if (!LINKEDIN_BIN_ID) return [];
     const res = await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}/latest`, {
       headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
     });
+    if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data.record) ? data.record.filter(p => !p.processed && !p.init) : [];
-  } catch(e) { return []; }
+  } catch (e) {
+    return [];
+  }
 }
 
-// Without this, every unprocessed post gets re-attempted on every run
-// (hourly, via cron), so the handler's runtime grows unbounded until it
-// blows past the function's maxDuration and Vercel kills it mid-request.
+/**
+ * Marks a LinkedIn post as processed
+ */
 async function markPostProcessed(post) {
   try {
-    const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
     if (!LINKEDIN_BIN_ID) return;
     const res = await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}/latest`, {
       headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
     });
+    if (!res.ok) return;
     const data = await res.json();
     const posts = Array.isArray(data.record) ? data.record : [];
     const updated = posts.map(p => p.addedAt === post.addedAt ? { ...p, processed: true } : p);
@@ -46,213 +73,198 @@ async function markPostProcessed(post) {
       headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_MASTER_KEY },
       body: JSON.stringify(updated)
     });
-  } catch(e) {
-    console.log("Mark processed error:", e.message);
+  } catch (e) {
+    console.log("Mark post processed error:", e.message);
   }
 }
 
-async function scrapeJobs() {
-  try {
-    const { execSync } = require("child_process");
-    const result = execSync(`python3 -c "
-from jobspy import scrape_jobs
-import json
-try:
-    jobs = scrape_jobs(
-        site_name=['linkedin','indeed'],
-        search_term='Microsoft Dynamics 365 CRM Developer',
-        location='India',
-        results_wanted=20,
-        hours_old=24,
-        country_indeed='India'
-    )
-    filtered = []
-    skip_words = ['intern','fresher','trainee','junior','graduate','entry']
-    for _, job in jobs.iterrows():
-        title = str(job.get('title','')).lower()
-        if any(x in title for x in skip_words):
-            continue
-        filtered.append({
-            'title': str(job.get('title','')),
-            'company': str(job.get('company','')),
-            'location': str(job.get('location','')),
-            'url': str(job.get('job_url','')),
-            'source': str(job.get('site','')),
-            'description': str(job.get('description',''))[:400]
-        })
-    print(json.dumps(filtered[:15]))
-except Exception as e:
-    print(json.dumps([]))
-"`, { timeout: 8000 });
-    const jobs = JSON.parse(result.toString().trim());
-    if (jobs.length > 0) {
-      console.log(`✅ Scraped ${jobs.length} real jobs`);
-      return jobs;
-    }
-  } catch(e) {
-    console.log("Scrape failed, using fallback job list:", e.message);
-  }
-  return [
-    { title: "Senior D365 CRM Developer", company: "Capgemini", location: "Hyderabad", url: "https://capgemini.com/careers", source: "LinkedIn", description: "Senior D365 CE developer C#.NET plugins Azure Functions Power Platform" },
-    { title: "MS Dynamics 365 CE Developer", company: "Infosys", location: "Bangalore", url: "https://infosys.com/careers", source: "Indeed", description: "D365 CRM customization Power Platform plugins workflows" },
-    { title: "D365 CE Technical Consultant", company: "Wipro", location: "Hyderabad", url: "https://wipro.com/careers", source: "LinkedIn", description: "Dynamics 365 CE developer Azure DevOps CI/CD" }
-  ];
-}
-
-// STRICT - Only firstname.lastname@company.com format
+/**
+ * Validates whether an email belongs to a real person / verified recruiter
+ * and is not a generic department/service mailbox.
+ */
 function isRealPersonEmail(email) {
-  if (!email) return false;
-  const local = email.split("@")[0].toLowerCase();
-  
+  if (!email || typeof email !== "string") return false;
+  const cleaned = email.trim().toLowerCase();
+  if (!cleaned.includes("@")) return false;
+  const [local, domain] = cleaned.split("@");
+  if (!local || !domain || !domain.includes(".")) return false;
+
   const blacklist = [
     "hr", "careers", "career", "recruitment", "recruit", "jobs", "job",
     "info", "contact", "admin", "support", "hello", "team", "talent",
     "india", "noreply", "no-reply", "hiring", "apply", "applications",
     "application", "staffing", "staff", "people", "humanresources",
     "acquisition", "resumes", "resume", "work", "opportunity", "connect",
-    "recruiting", "joinus", "getintouch", "enquiry", "enquiries"
+    "recruiting", "joinus", "getintouch", "enquiry", "enquiries", "askhr"
   ];
-  
-  const parts = local.split(".");
-  for (const part of parts) {
-    if (blacklist.includes(part)) return false;
+
+  if (local.includes(".")) {
+    const parts = local.split(".");
+    if (blacklist.includes(parts[0])) return false;
+    return parts.every(p => p.length >= 2 && /^[a-z]+$/.test(p));
   }
-  
-  // Must have a dot = firstname.lastname
-  if (!local.includes(".")) return false;
-  
-  // Each part must be a real name (letters only, min 2 chars)
-  for (const part of parts) {
-    if (part.length < 2) return false;
-    if (!/^[a-z]+$/.test(part)) return false;
-  }
-  
-  return true;
+
+  if (blacklist.includes(local)) return false;
+  if (local.length >= 3 && /^[a-z]+$/.test(local)) return true;
+
+  return false;
 }
 
-async function findHREmail(company) {
-  // Known verified HR emails for major companies
-  const knownEmails = {
-    "capgemini": { email: "careers.india@capgemini.com", name: "Careers" },
-    "infosys": { email: "askhr@infosys.com", name: "HR" },
-    "wipro": { email: "careers@wipro.com", name: "Careers" },
-    "accenture": { email: "india.recruitment@accenture.com", name: "Recruitment" },
-    "tcs": { email: "careers@tcs.com", name: "Careers" },
-    "cognizant": { email: "careers@cognizant.com", name: "Careers" },
-    "tech mahindra": { email: "careers@techmahindra.com", name: "Careers" },
-    "hcl": { email: "careers@hcltech.com", name: "Careers" },
-    "mphasis": { email: "careers@mphasis.com", name: "Careers" },
-    "hexaware": { email: "careers@hexaware.com", name: "Careers" },
-    "genpact": { email: "careers@genpact.com", name: "Careers" },
-    "deloitte": { email: "india.recruitment@deloitte.com", name: "Recruitment" },
-    "pwc": { email: "careers@pwc.com", name: "Careers" },
-    "ey": { email: "india.recruitment@ey.com", name: "Recruitment" },
-    "kpmg": { email: "india.recruitment@kpmg.com", name: "Recruitment" },
-    "microsoft": { email: "india.recruitment@microsoft.com", name: "Recruitment" },
-    "ibm": { email: "careers@ibm.com", name: "Careers" },
-    "oracle": { email: "india.talent@oracle.com", name: "Talent" },
-    "sap": { email: "india.careers@sap.com", name: "Careers" }
-  };
-
-  const companyLower = company.toLowerCase();
-
-  // Check known emails first
-  for (const [key, value] of Object.entries(knownEmails)) {
-    if (companyLower.includes(key)) {
-      console.log(`✅ Known HR email: ${value.email}`);
-      return value;
-    }
-  }
-
-  // Try Apollo for unknown companies
-  try {
-    console.log(`🔍 Apollo searching: ${company}`);
-    const res = await fetch("https://api.apollo.io/api/v1/mixed_people/search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Api-Key": process.env.APOLLO_API_KEY
-      },
-      body: JSON.stringify({
-        q_organization_name: company,
-        person_titles: [
-          "Technical Recruiter",
-          "IT Recruiter",
-          "HR Manager",
-          "Talent Acquisition",
-          "Recruitment Manager"
-        ],
-        per_page: 5
-      })
-    });
-    const data = await res.json();
-    for (const person of (data.people || [])) {
-      if (person.email && person.email.includes("@") && !person.email.includes("noreply")) {
-        console.log(`✅ Apollo found: ${person.first_name} - ${person.email}`);
-        return { email: person.email, name: person.first_name };
+/**
+ * Searches for legitimate recruiter / talent acquisition email
+ * Never invents or guesses generic email addresses.
+ */
+async function findRecruiterContact(job) {
+  // 1. Check description text for an explicit recruiter email
+  if (job.description) {
+    const emailRegex = /[\w.+-]+@[\w-]+\.[\w.]+/g;
+    const matches = job.description.match(emailRegex);
+    if (matches) {
+      for (const email of matches) {
+        if (isRealPersonEmail(email)) {
+          console.log(`✅ Extracted verified recruiter email from job text: ${email}`);
+          return { email, name: null, source: "Job Listing" };
+        }
       }
     }
-  } catch(e) {
-    console.log("Apollo error:", e.message);
   }
 
-  console.log(`⚠️ No HR email found for: ${company}`);
+  // 2. Query Apollo API if configured with key
+  const apolloKey = process.env.APOLLO_API_KEY;
+  if (apolloKey && job.company && job.company.toLowerCase() !== "confidential") {
+    try {
+      console.log(`🔍 Apollo search recruiter for: ${job.company}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const res = await fetch("https://api.apollo.io/api/v1/mixed_people/search", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Api-Key": apolloKey
+        },
+        body: JSON.stringify({
+          q_organization_name: job.company,
+          person_titles: [
+            "Technical Recruiter",
+            "IT Recruiter",
+            "Talent Acquisition Specialist",
+            "Talent Acquisition Lead",
+            "Recruitment Lead",
+            "HR Manager",
+            "Hiring Manager"
+          ],
+          per_page: 5
+        })
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        for (const person of (data.people || [])) {
+          if (person.email && isRealPersonEmail(person.email)) {
+            console.log(`✅ Apollo found verified contact: ${person.first_name || ""} (${person.email}) at ${job.company}`);
+            return {
+              email: person.email,
+              name: person.first_name || null,
+              source: "Apollo"
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`Apollo search error for ${job.company}:`, e.message);
+    }
+  }
+
   return null;
 }
 
-async function generateEmail(candidate, job, groq, isLinkedIn = false, recruiterName = null) {
+/**
+ * Generates an individualized D365 application pitch with Groq
+ */
+async function generateEmail(candidate, job, groq, recruiterName = null, isLinkedIn = false) {
   const greeting = recruiterName ? `Dear ${recruiterName}` : "Dear Hiring Manager";
-  const linkedInContext = isLinkedIn ? "I came across your LinkedIn post and" : "I";
+  const introContext = isLinkedIn ? "I came across your LinkedIn opportunity and" : "I am reaching out regarding the opportunity and";
 
-  const prompt = `Write a CONFIDENT, POLITE and ATTRACTIVE job application email.
+  const prompt = `Write a HIGHLY PROFESSIONAL, COMPELLING, and CONFIDENT job application email for a Dynamics 365 role.
 
-Candidate: ${candidate.name}
-Experience: ${candidate.experience} years Microsoft Dynamics 365 CRM Developer
-Role: ${candidate.role}
-Key Skills: C#.NET plugins, Power Platform, Azure Functions, Azure DevOps, JavaScript, FetchXML
+CANDIDATE PROFILE:
+Name: ${candidate.name}
+Experience: ${candidate.experience || "5+"} years Microsoft Dynamics 365 CRM
+Role: ${candidate.role || "Dynamics 365 Developer"}
+Key Skills: ${Array.isArray(candidate.skills) ? candidate.skills.join(", ") : (candidate.skills || "D365 CRM, C#.NET plugins, Power Platform, Azure Functions, Dataverse")}
+Clients/Projects: ${candidate.clients || "Enterprise CRM solutions"}
+Certifications: ${candidate.certifications || ""}
+Summary: ${candidate.summary || ""}
 
-Job: ${job.title} at ${job.company}
+TARGET JOB:
+Title: ${job.title}
+Company: ${job.company}
 Location: ${job.location}
-Requirements: ${job.description}
+Description: ${(job.description || "").substring(0, 400)}
 
-Instructions:
+INSTRUCTIONS:
 - Start with "${greeting},"
-- ${linkedInContext} am writing to express strong interest
-- Be CONFIDENT, POLITE and PROFESSIONAL (not desperate)
-- Mention ${candidate.experience} years experience naturally
-- Highlight 2-3 most relevant skills
-- Show genuine enthusiasm for ${job.company}
-- End with clear call to action
-- Max 130 words
-- Make it ATTRACTIVE and memorable
-
-Write:
-SUBJECT: [compelling subject line]
+- ${introContext} am writing to express my strong interest in the ${job.title} position at ${job.company}
+- Clearly highlight ${candidate.experience} years of hands-on expertise in Microsoft Dynamics 365 CRM and Power Platform
+- Highlight 2-3 specific technical strengths matching this job (e.g., C#.NET plugins, Dataverse, Azure Functions, CI/CD)
+- Maintain a polite, confident, senior tone (never desperate)
+- Conclude with a clear, professional call to action
+- Maximum 140 words
+- Return format:
+SUBJECT: [Compelling Subject Line]
 
 BODY:
-[email body]`;
+[Email Body]`;
 
-  const response = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 500
-  });
+  try {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 500
+    });
 
-  const text = response.choices[0].message.content;
-  if (text.includes("SUBJECT:") && text.includes("BODY:")) {
-    return {
-      subject: text.split("SUBJECT:")[1].split("BODY:")[0].trim(),
-      body: text.split("BODY:")[1].trim()
-    };
+    const text = response.choices[0].message.content;
+    if (text.includes("SUBJECT:") && text.includes("BODY:")) {
+      return {
+        subject: text.split("SUBJECT:")[1].split("BODY:")[0].trim(),
+        body: text.split("BODY:")[1].trim()
+      };
+    }
+
+    const lines = text.split("\n");
+    let subject = "";
+    let bodyLines = [];
+    let foundSubject = false;
+    for (const line of lines) {
+      if (line.toLowerCase().startsWith("subject:")) {
+        subject = line.replace(/^subject:\s*/i, "").trim();
+        foundSubject = true;
+      } else if (foundSubject) {
+        if (line.trim().toLowerCase() === "body:") continue;
+        bodyLines.push(line);
+      }
+    }
+
+    if (subject && bodyLines.length > 0) {
+      return { subject, body: bodyLines.join("\n").trim() };
+    }
+  } catch (err) {
+    console.log("Groq email generation error:", err.message);
   }
 
   return {
-    subject: `${candidate.experience}+ Years D365 CRM Expert | ${job.title} - ${candidate.name}`,
-    body: `${greeting},\n\nI came across the ${job.title} opportunity at ${job.company} and I'm excited to apply. With ${candidate.experience}+ years of hands-on Microsoft Dynamics 365 CRM development experience, I have delivered enterprise solutions involving C#.NET plugins, Power Platform, Azure Functions, and Azure DevOps CI/CD.\n\nMy background aligns well with your requirements and I am confident in adding immediate value to your team.\n\nI would welcome the opportunity to discuss further. Please find my resume attached.\n\nBest regards,\n${candidate.name}\n✉️ ${candidate.email}`
+    subject: `${candidate.experience || "5"}+ Years D365 CRM Expert | ${job.title} Application - ${candidate.name}`,
+    body: `${greeting},\n\nI am writing to express my strong interest in the ${job.title} position at ${job.company}. With ${candidate.experience || "5"}+ years of specialized experience in Microsoft Dynamics 365 CRM and Power Platform development, I have engineered enterprise solutions utilizing C#.NET plugins, Dataverse, Azure Functions, and automated workflows.\n\nMy technical foundation aligns seamlessly with your requirements and I am confident in delivering immediate value to your engineering team.\n\nI would welcome the opportunity to discuss how my background fits your upcoming goals. Please find my resume attached.\n\nBest regards,\n${candidate.name}\n✉️ ${candidate.email}`
   };
 }
 
-async function sendGmail(candidate, to, subject, body) {
+/**
+ * Dispatches email via Gmail API with resume attachment support
+ */
+async function sendGmail(candidate, to, subject, body, job) {
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -260,34 +272,95 @@ async function sendGmail(candidate, to, subject, body) {
   );
   oauth2Client.setCredentials({ refresh_token: candidate.refreshToken });
   const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-  const message = [
-    `From: ${candidate.name} <${candidate.email}>`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    "Content-Type: text/plain; charset=utf-8",
-    "",
-    body
-  ].join("\r\n");
+
+  let resumeBuffer = null;
+  let resumeFilename = `${candidate.name.replace(/\s+/g, "_")}_Resume.pdf`;
+  let resumeMimeType = "application/pdf";
+
+  // Attempt tailored PDF generation or fetch original resume
+  try {
+    if (job && job.company) {
+      const tailoredData = await tailorResumeText(candidate, job).catch(() => null);
+      if (tailoredData) {
+        const pdfBuffer = await generatePDF(tailoredData, candidate, job).catch(() => null);
+        if (pdfBuffer) {
+          resumeBuffer = pdfBuffer;
+          resumeFilename = `${candidate.name.replace(/\s+/g, "_")}_${job.company.replace(/\s+/g, "_")}_Resume.pdf`;
+          uploadTailoredResume(pdfBuffer, candidate.id, job.company).catch(e => console.log("Tailored upload error:", e.message));
+        }
+      }
+    }
+    if (!resumeBuffer && candidate.resume && candidate.resume.url) {
+      const res = await fetch(candidate.resume.url);
+      const arr = await res.arrayBuffer();
+      resumeBuffer = Buffer.from(arr);
+      resumeFilename = candidate.resume.filename || resumeFilename;
+      resumeMimeType = candidate.resume.mimeType || resumeMimeType;
+    }
+  } catch (e) {
+    console.log(`Resume attach error for ${candidate.name}:`, e.message);
+  }
+
+  const boundary = "boundary_" + Date.now();
+  let mimeMessage = "";
+
+  if (resumeBuffer) {
+    mimeMessage = [
+      `From: ${candidate.name} <${candidate.email}>`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      ``,
+      `--${boundary}`,
+      `Content-Type: text/plain; charset=utf-8`,
+      ``,
+      body,
+      ``,
+      `--${boundary}`,
+      `Content-Type: ${resumeMimeType}`,
+      `Content-Transfer-Encoding: base64`,
+      `Content-Disposition: attachment; filename="${resumeFilename}"`,
+      ``,
+      resumeBuffer.toString("base64"),
+      `--${boundary}--`
+    ].join("\r\n");
+  } else {
+    mimeMessage = [
+      `From: ${candidate.name} <${candidate.email}>`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset=utf-8`,
+      ``,
+      body
+    ].join("\r\n");
+  }
+
+  const raw = Buffer.from(mimeMessage).toString("base64url");
   await gmail.users.messages.send({
     userId: "me",
-    requestBody: { raw: Buffer.from(message).toString("base64url") }
+    requestBody: { raw }
   });
-  console.log(`✅ Sent from ${candidate.email} to ${to}`);
+  console.log(`✅ Sent from ${candidate.email} to ${to} ${resumeBuffer ? "(with PDF resume)" : ""}`);
 }
 
+/**
+ * Appends application telemetry to Google Sheets
+ */
 async function updateSheet(candidate, job, hrEmail, subject, sent, source) {
   try {
-    const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const rawSa = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    if (!rawSa || !SHEET_ID) return;
 
+    const serviceAccount = JSON.parse(rawSa);
     const auth = new google.auth.GoogleAuth({
       credentials: serviceAccount,
       scopes: ["https://www.googleapis.com/auth/spreadsheets"]
     });
 
     const sheets = google.sheets({ version: "v4", auth });
-
-    const appendResponse = await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
       range: "Sheet1!A:K",
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
@@ -297,169 +370,329 @@ async function updateSheet(candidate, job, hrEmail, subject, sent, source) {
           job.company || "",
           job.location || "",
           job.url || "",
-          source || job.source || "",
+          source || job.source || "Discovered",
           hrEmail || "",
           candidate.name || "",
           subject || "",
           sent ? "Yes" : "No",
           new Date().toLocaleDateString("en-IN"),
-          "Applied"
+          sent ? "Applied" : "Failed"
         ]]
       }
     });
-
-    console.log(`📊 Sheet updated! ${candidate.name} → ${job.company}`);
-  } catch(e) {
-    console.log("Sheet update FAILED:", e.message);
+    console.log(`📊 Google Sheets telemetry logged: ${candidate.name} → ${job.company}`);
+  } catch (e) {
+    console.log("Sheet update failed:", e.message);
   }
 }
 
+/**
+ * Parses raw LinkedIn post via Groq
+ */
 async function parseLinkedInPost(post, groq) {
   const prompt = `Extract job details from this LinkedIn recruiter post. Return ONLY valid JSON:
 
 Post: "${post.text}"
 
 {
-  "title": "job title",
+  "title": "exact job title",
   "company": "company name",
   "location": "location or India",
   "recruiterName": "first name only if mentioned",
   "skills": "key skills mentioned"
 }`;
 
-  const response = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 200
-  });
-
   try {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 250
+    });
     const text = response.choices[0].message.content;
     const json = text.match(/\{[\s\S]*\}/)?.[0];
     return json ? JSON.parse(json) : null;
-  } catch(e) { return null; }
+  } catch (e) {
+    return null;
+  }
 }
 
+/**
+ * Checks candidate location alignment if candidate specified preferred location
+ */
+function candidateMatchesJob(candidate, job) {
+  if (!candidate) return false;
+  if (!candidate.location && !candidate.preferredLocation) {
+    return true; // No candidate location constraint, open to all
+  }
+  const pref = (candidate.location || candidate.preferredLocation || "").toLowerCase();
+  const jobLoc = (job.location || "").toLowerCase();
+  if (pref.includes("remote") || jobLoc.includes("remote") || jobLoc.includes("india")) {
+    return true;
+  }
+  return jobLoc.includes(pref);
+}
+
+/**
+ * Main Controller Handler for Job Discovery and Outbound Application Automation
+ */
 module.exports = async (req, res) => {
-  console.log("🚀 D365 Job Hunter - " + new Date().toISOString());
+  console.log("🚀 D365 Job Hunter Run: " + new Date().toISOString());
+
   const results = [];
-  const skipped = [];
+  const errors = [];
+  let candidateMatches = 0;
+  let noContact = 0;
+  let readyToApply = 0;
+  let emailsSent = 0;
+  let emailsFailed = 0;
+
   const groq = new Groq({ apiKey: GROQ_API_KEY });
 
   try {
+    // 1. Load Candidates
     const candidates = await getCandidates();
-    console.log(`👥 ${candidates.length} candidates`);
-    if (candidates.length === 0) return res.json({ success: true, message: "No candidates" });
+    console.log(`👥 Loaded ${candidates.length} active registered candidates`);
 
-    // SCRAPED JOBS
-    const jobs = await scrapeJobs();
-    for (const job of jobs) {
-      const hr = await findHREmail(job.company);
-      if (!hr) {
-        console.log(`⏭ Skip ${job.company} - no real person email found`);
-        skipped.push(job.company);
-        continue;
-      }
-      const hrEmail = hr.email;
-
-      for (const candidate of candidates) {
-        try {
-          const isDuplicate = await alreadySent(candidate.email, hrEmail, job.title);
-          if (isDuplicate) {
-            console.log(`⏭ Skip: ${candidate.name} already sent to ${hrEmail} for ${job.title}`);
-            continue;
-          }
-
-          const { subject, body } = await generateEmail(candidate, job, groq, false, hr.name);
-          let sent = false;
-          try {
-            await sendGmail(candidate, hrEmail, subject, body);
-            sent = true;
-            if (sent) await markAsSent(candidate.email, hrEmail, job.title);
-          } catch(e) {
-            console.log(`❌ ${candidate.name}:`, e.message);
-          }
-          await updateSheet(candidate, job, hrEmail, subject, sent, "Scraped");
-          results.push({ candidate: candidate.name, company: job.company, hrEmail, sent });
-          await new Promise(r => setTimeout(r, 2000));
-        } catch(e) {
-          console.log(`Error:`, e.message);
-        }
-      }
+    if (candidates.length === 0) {
+      return res.json({
+        success: true,
+        candidates: 0,
+        jobsSearched: 0,
+        jobsFound: 0,
+        d365Matches: 0,
+        duplicateJobs: 0,
+        candidateMatches: 0,
+        noContact: 0,
+        readyToApply: 0,
+        emailsSent: 0,
+        emailsFailed: 0,
+        sourceStats: {},
+        errors: ["No active candidates with valid OAuth credentials found."],
+        results: []
+      });
     }
 
-    // LINKEDIN POSTS
-    const posts = await getLinkedInPosts();
-    for (const post of posts) {
-      try {
-        const details = await parseLinkedInPost(post, groq);
-        if (!details) continue;
+    // 2. Discover Real D365 Jobs
+    console.log("🔎 Running D365 Job Discovery...");
+    const discovery = await discoverJobs();
 
-        let hrEmail = null;
-        let apolloName = null;
-        if (post.email && isRealPersonEmail(post.email)) {
-          hrEmail = post.email;
-        } else {
-          const hr = await findHREmail(details.company);
-          if (hr) {
-            hrEmail = hr.email;
-            apolloName = hr.name;
-          }
-        }
-        if (!hrEmail) {
-          console.log(`⏭ Skip LinkedIn post - no real person email`);
-          await markPostProcessed(post);
+    if (discovery.errors && discovery.errors.length > 0) {
+      errors.push(...discovery.errors);
+    }
+
+    const jobs = discovery.jobs || [];
+    console.log(`📋 Discovered ${jobs.length} ranked D365 jobs`);
+
+    // 3. Process Discovered Jobs
+    for (const job of jobs) {
+      // Find legitimate recruiter contact
+      const contact = await findRecruiterContact(job);
+      if (!contact || !contact.email) {
+        noContact++;
+        console.log(`⏭ No verified contact found for: ${job.company} (${job.title})`);
+        continue;
+      }
+
+      const hrEmail = contact.email;
+      const recruiterName = contact.name;
+
+      for (const candidate of candidates) {
+        if (!candidateMatchesJob(candidate, job)) {
           continue;
         }
 
-        const job = {
-          title: details.title,
-          company: details.company,
-          location: details.location || "India",
-          url: post.url || "",
-          source: "LinkedIn Post",
-          description: details.skills || ""
-        };
+        candidateMatches++;
 
-        for (const candidate of candidates) {
-          try {
-            const isDuplicate = await alreadySent(candidate.email, hrEmail, job.title);
-            if (isDuplicate) {
-              console.log(`⏭ Skip: ${candidate.name} already sent to ${hrEmail} for ${job.title}`);
-              continue;
-            }
-
-            const { subject, body } = await generateEmail(candidate, job, groq, true, details.recruiterName || apolloName);
-            let sent = false;
-            try {
-              await sendGmail(candidate, hrEmail, subject, body);
-              sent = true;
-              if (sent) await markAsSent(candidate.email, hrEmail, job.title);
-            } catch(e) {
-              console.log(`❌ ${candidate.name}:`, e.message);
-            }
-            await updateSheet(candidate, job, hrEmail, subject, sent, "LinkedIn Post");
-            results.push({ candidate: candidate.name, company: job.company, hrEmail, sent, source: "LinkedIn Post" });
-            await new Promise(r => setTimeout(r, 2000));
-          } catch(e) {
-            console.log(`Error:`, e.message);
-          }
+        // Duplicate Check in Upstash Redis
+        const isDuplicate = await alreadySent(candidate.email, hrEmail, job.title);
+        if (isDuplicate) {
+          console.log(`⏭ Duplicate skipped: ${candidate.name} → ${hrEmail} for "${job.title}"`);
+          continue;
         }
-        await markPostProcessed(post);
-      } catch(e) {
-        console.log("Post error:", e.message);
+
+        readyToApply++;
+
+        try {
+          console.log(`✉️ Generating D365 pitch: ${candidate.name} → ${job.company} (${hrEmail})`);
+          const { subject, body } = await generateEmail(candidate, job, groq, recruiterName, false);
+
+          let sent = false;
+          let failureReason = null;
+          try {
+            await sendGmail(candidate, hrEmail, subject, body, job);
+            sent = true;
+            emailsSent++;
+            await markAsSent(candidate.email, hrEmail, job.title);
+          } catch (sendErr) {
+            emailsFailed++;
+            failureReason = sendErr.message;
+            console.log(`❌ Gmail send failed for ${candidate.name}:`, sendErr.message);
+          }
+
+          await updateSheet(candidate, job, hrEmail, subject, sent, job.source || "Adzuna");
+          await saveApplication({
+            candidateName: candidate.name,
+            candidateEmail: candidate.email,
+            company: job.company,
+            hrEmail,
+            subject,
+            sent
+          });
+
+          results.push({
+            candidate: candidate.name,
+            company: job.company,
+            jobTitle: job.title,
+            hrEmail,
+            sent,
+            source: job.source || "Adzuna",
+            reason: failureReason
+          });
+
+          // Pacing delay between email dispatches
+          await new Promise(r => setTimeout(r, 2000));
+        } catch (jobErr) {
+          console.log(`Candidate job dispatch error (${candidate.name}):`, jobErr.message);
+          errors.push(`${candidate.name} at ${job.company}: ${jobErr.message}`);
+        }
       }
     }
 
-    res.json({
+    // 4. Process Queued LinkedIn Posts
+    const posts = await getLinkedInPosts();
+    if (posts.length > 0) {
+      console.log(`📱 Processing ${posts.length} queued LinkedIn posts`);
+      for (const post of posts) {
+        try {
+          const details = await parseLinkedInPost(post, groq);
+          if (!details) {
+            await markPostProcessed(post);
+            continue;
+          }
+
+          let hrEmail = null;
+          let apolloName = null;
+
+          if (post.email && isRealPersonEmail(post.email)) {
+            hrEmail = post.email;
+          } else {
+            const contact = await findRecruiterContact({
+              company: details.company,
+              description: post.text
+            });
+            if (contact) {
+              hrEmail = contact.email;
+              apolloName = contact.name;
+            }
+          }
+
+          if (!hrEmail) {
+            console.log(`⏭ Skip LinkedIn post for ${details.company} - no verified recruiter contact`);
+            await markPostProcessed(post);
+            continue;
+          }
+
+          const job = {
+            title: details.title || "Dynamics 365 Developer",
+            company: details.company || "Enterprise Partner",
+            location: details.location || "India",
+            url: post.url || "",
+            source: "LinkedIn Post",
+            description: details.skills || post.text || ""
+          };
+
+          for (const candidate of candidates) {
+            try {
+              const isDuplicate = await alreadySent(candidate.email, hrEmail, job.title);
+              if (isDuplicate) {
+                continue;
+              }
+
+              const { subject, body } = await generateEmail(candidate, job, groq, details.recruiterName || apolloName, true);
+              let sent = false;
+              let failureReason = null;
+              try {
+                await sendGmail(candidate, hrEmail, subject, body, job);
+                sent = true;
+                emailsSent++;
+                await markAsSent(candidate.email, hrEmail, job.title);
+              } catch (sendErr) {
+                emailsFailed++;
+                failureReason = sendErr.message;
+              }
+
+              await updateSheet(candidate, job, hrEmail, subject, sent, "LinkedIn Post");
+              await saveApplication({
+                candidateName: candidate.name,
+                candidateEmail: candidate.email,
+                company: job.company,
+                hrEmail,
+                subject,
+                sent
+              });
+
+              results.push({
+                candidate: candidate.name,
+                company: job.company,
+                jobTitle: job.title,
+                hrEmail,
+                sent,
+                source: "LinkedIn Post",
+                reason: failureReason
+              });
+
+              await new Promise(r => setTimeout(r, 2000));
+            } catch (postCandErr) {
+              console.log("LinkedIn post candidate error:", postCandErr.message);
+            }
+          }
+
+          await markPostProcessed(post);
+        } catch (postErr) {
+          console.log("Post processing error:", postErr.message);
+        }
+      }
+    }
+
+    // 5. Final Diagnostic Response
+    const responsePayload = {
       success: true,
       candidates: candidates.length,
-      emailsSent: results.filter(r => r.sent).length,
-      skippedCompanies: skipped,
-      results
-    });
 
-  } catch(e) {
-    res.status(500).json({ success: false, error: e.message });
+      jobsSearched: discovery.jobsSearched,
+      jobsFound: discovery.jobsFound,
+      d365Matches: discovery.d365Matches,
+      duplicateJobs: discovery.duplicateJobs,
+      candidateMatches,
+      noContact,
+      readyToApply,
+
+      emailsSent,
+      emailsFailed,
+
+      sourceStats: discovery.sourceStats,
+      errors,
+      results
+    };
+
+    console.log("📊 Application run completed:", JSON.stringify({
+      candidates: responsePayload.candidates,
+      jobsSearched: responsePayload.jobsSearched,
+      jobsFound: responsePayload.jobsFound,
+      d365Matches: responsePayload.d365Matches,
+      emailsSent: responsePayload.emailsSent
+    }));
+
+    return res.json(responsePayload);
+
+  } catch (fatalErr) {
+    console.error("Fatal dispatch error:", fatalErr);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        error: fatalErr.message,
+        errors: [fatalErr.message]
+      });
+    }
   }
 };

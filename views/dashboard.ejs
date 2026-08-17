@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -739,6 +739,84 @@
       });
     }
 
+    function renderScraperDiagnostics(data) {
+      const box = document.getElementById('runNowResults');
+      if (!box) return;
+      if (!data) { box.style.display = 'none'; return; }
+
+      let html = '<h3 style="color:var(--accent-cyan);margin-bottom:14px;font-size:16px">📊 Job Discovery & Telemetry Diagnostics</h3>';
+
+      html += `<div class="diag-grid">
+        <div class="diag-card">
+          <div class="diag-val">${data.jobsSearched ?? 0}</div>
+          <div class="diag-lbl">Jobs Searched</div>
+        </div>
+        <div class="diag-card">
+          <div class="diag-val">${data.jobsFound ?? 0}</div>
+          <div class="diag-lbl">Jobs Discovered</div>
+        </div>
+        <div class="diag-card">
+          <div class="diag-val" style="color:var(--accent-cyan)">${data.d365Matches ?? 0}</div>
+          <div class="diag-lbl">D365 Matches</div>
+        </div>
+        <div class="diag-card">
+          <div class="diag-val">${data.candidates ?? 0}</div>
+          <div class="diag-lbl">Candidates</div>
+        </div>
+        <div class="diag-card">
+          <div class="diag-val" style="color:var(--color-success)">${data.readyToApply ?? 0}</div>
+          <div class="diag-lbl">Ready to Apply</div>
+        </div>
+        <div class="diag-card">
+          <div class="diag-val" style="color:var(--color-success)">${data.emailsSent ?? 0}</div>
+          <div class="diag-lbl">Emails Sent</div>
+        </div>
+        <div class="diag-card">
+          <div class="diag-val" style="color:var(--text-muted)">${data.noContact ?? 0}</div>
+          <div class="diag-lbl">No Contact Found</div>
+        </div>
+        <div class="diag-card">
+          <div class="diag-val" style="color:var(--text-muted)">${data.duplicateJobs ?? 0}</div>
+          <div class="diag-lbl">Duplicates Skipped</div>
+        </div>
+        <div class="diag-card">
+          <div class="diag-val" style="color:${(data.emailsFailed || 0) > 0 ? 'var(--color-danger)' : 'var(--text-muted)'}">${data.emailsFailed ?? 0}</div>
+          <div class="diag-lbl">Failed Dispatches</div>
+        </div>
+      </div>`;
+
+      if (data.errors && data.errors.length > 0) {
+        html += `<div class="alert alert-warning" style="margin-top:14px;margin-bottom:14px;font-size:13px;display:flex">
+          <span>⚠️</span>
+          <div><strong>Source Diagnostics:</strong><br>${data.errors.map(e => `• ${e}`).join('<br>')}</div>
+        </div>`;
+      }
+
+      if (data.results && data.results.length > 0) {
+        html += '<h4 style="color:var(--text-primary);margin-top:18px;margin-bottom:10px;font-size:14px">📧 Dispatch Log</h4>';
+        data.results.forEach(r => {
+          html += `<div class="result-row">
+            <div>
+              <strong>${r.candidate}</strong> → <span style="color:var(--accent-cyan)">${r.company}</span>
+              <span class="muted" style="font-size:12px;margin-left:6px">${r.jobTitle ? `(${r.jobTitle})` : ''}</span>
+              ${r.hrEmail ? `<div class="mono-font" style="font-size:11px;color:var(--text-muted)">Contact: ${r.hrEmail}</div>` : ''}
+              ${r.reason ? `<div style="font-size:11px;color:var(--color-danger)">Reason: ${r.reason}</div>` : ''}
+            </div>
+            <div style="text-align:right">
+              ${r.sent ? '<span class="badge badge-green">✅ Sent</span>' : '<span class="badge badge-red">❌ Failed</span>'}
+            </div>
+          </div>`;
+        });
+      } else if ((data.emailsSent || 0) === 0 && (data.readyToApply || 0) === 0) {
+        html += `<div class="empty-state" style="padding:16px 10px">
+          <p class="muted">No outbound applications ready in this cycle${data.noContact > 0 ? ` (${data.noContact} jobs skipped due to no verified recruiter contact)` : ''}.</p>
+        </div>`;
+      }
+
+      box.innerHTML = html;
+      box.style.display = 'block';
+    }
+
     // ---- Run Now ----
     const runNowBtn = document.getElementById('runNowBtn');
     if (runNowBtn) {
@@ -746,7 +824,7 @@
         const status = document.getElementById('runNowStatus');
         runNowBtn.disabled = true;
         runNowBtn.innerHTML = '<span class="spinner"></span> Running…';
-        if (status) status.textContent = 'This can take a minute or two — scraping jobs, finding HR contacts, writing and sending emails. Do not close this tab.';
+        if (status) status.textContent = 'Discovering D365 jobs, resolving verified recruiter contacts, generating AI pitches, and dispatching emails. Please wait...';
         const runNowResults = document.getElementById('runNowResults');
         if (runNowResults) runNowResults.style.display = 'none';
 
@@ -766,11 +844,16 @@
           }
 
           if (data.success) {
-            if (status) status.textContent = `✅ Done! ${data.emailsSent || 0} emails sent across ${data.candidates || 0} candidates.`;
-            renderResults('runNowResults', data.results);
-            setTimeout(() => location.reload(), 4000);
+            if (status) {
+              status.textContent = `Completed! Discovered ${data.jobsFound || 0} jobs (${data.d365Matches || 0} D365 matches). Sent ${data.emailsSent || 0} emails across ${data.candidates || 0} candidates.`;
+            }
+            renderScraperDiagnostics(data);
+            loadHistory();
           } else {
             if (status) status.textContent = '❌ ' + (data.error || data.message || 'Something went wrong');
+            if (data.errors || data.sourceStats) {
+              renderScraperDiagnostics(data);
+            }
           }
         } catch(e) {
           if (status) status.textContent = '❌ ' + e.message;
