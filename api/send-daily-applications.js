@@ -216,6 +216,7 @@ function isRealPersonEmail(email) {
  * Never persisted. Prevents duplicate Apollo calls for the same company.
  */
 const recruiterContactCache = new Map();
+let recruiterLookupCount = 0;
 
 async function findRecruiterContact(job) {
   const companyKey = (job.company || "").trim().toLowerCase();
@@ -242,11 +243,18 @@ async function findRecruiterContact(job) {
     }
   }
 
-  // 2. Apollo API lookup (bounded by timeout + cache)
+  // 2. Apollo API lookup (bounded by timeout + cache + limit)
   const apolloKey = process.env.APOLLO_API_KEY;
   if (apolloKey && job.company && job.company.toLowerCase() !== "confidential") {
+    if (recruiterLookupCount >= MAX_RECRUITER_LOOKUPS) {
+      console.log(`⏭ Apollo limit exhausted (${MAX_RECRUITER_LOOKUPS}). Skipping Apollo for: ${job.company}`);
+      if (companyKey) recruiterContactCache.set(companyKey, null);
+      return null;
+    }
+
+    recruiterLookupCount++;
+    console.log(`🔍 Apollo lookup ${recruiterLookupCount}/${MAX_RECRUITER_LOOKUPS}: ${job.company}`);
     try {
-      console.log(`🔍 Apollo search recruiter for: ${job.company}`);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
 
@@ -660,19 +668,14 @@ module.exports = async (req, res) => {
 
     // ── STEP 4: Resolve recruiter contacts with bounded concurrency ──────────
     // Deduplicate companies first - only look up each company once via Apollo
-    const uniqueCompanies = [...new Set(jobs.map(j => (j.company || "").trim().toLowerCase()))];
-    const lookupCount = Math.min(uniqueCompanies.length, MAX_RECRUITER_LOOKUPS);
-    console.log(`🔍 Resolving recruiter contacts for ${uniqueCompanies.length} unique companies (max ${lookupCount} Apollo calls)`);
+    const uniqueCompanies = [...new Set(
+      jobs.map(j => (j.company || "").trim().toLowerCase())
+    )];
 
-    // Pre-populate cache for companies beyond the lookup limit with null
-    // so they skip Apollo and don't timeout
-    if (uniqueCompanies.length > MAX_RECRUITER_LOOKUPS) {
-      uniqueCompanies.slice(MAX_RECRUITER_LOOKUPS).forEach(key => {
-        if (!recruiterContactCache.has(key)) {
-          recruiterContactCache.set(key, null);
-        }
-      });
-    }
+    console.log(
+      `🔍 Processing ${uniqueCompanies.length} unique companies; ` +
+      `Apollo budget: ${MAX_RECRUITER_LOOKUPS}`
+    );
 
     // ── STEP 5: Process Jobs & Dispatch Applications ─────────────────────────
     for (const job of jobs) {
@@ -818,6 +821,9 @@ module.exports = async (req, res) => {
       success: true,
       candidates:   candidates.length,
       candidateDiagnostics,
+
+      apolloLookupsUsed: recruiterLookupCount,
+      apolloLookupLimit: MAX_RECRUITER_LOOKUPS,
 
       jobsSearched:     discovery.jobsSearched,
       jobsFound:        discovery.jobsFound,
