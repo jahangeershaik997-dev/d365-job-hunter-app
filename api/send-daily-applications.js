@@ -6,6 +6,12 @@
  * authenticated Gmail accounts.
  */
 
+try {
+  if (process.env.NODE_ENV !== "production") {
+    require("dotenv").config();
+  }
+} catch (e) {}
+
 const { google } = require("googleapis");
 const Groq = require("groq-sdk");
 const { discoverJobs } = require("../lib/job-sources");
@@ -15,7 +21,6 @@ const { tailorResumeText, generatePDF, uploadTailoredResume } = require("./tailo
 
 const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID || "6a7fe014f5f4af5e29189def";
 const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY || "$2a$10$mOTOfSBdMCPsMoeb7FIaVubVgsRJqsgyheEbJc2nZ6aZ5p3cKzVJa";
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
 
@@ -27,7 +32,15 @@ async function getCandidates() {
     const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
       headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
     });
-    if (!res.ok) return [];
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "");
+      console.log(
+        `Candidates JSONBin error: HTTP ${res.status} ${res.statusText} ${errorText.substring(0, 300)}`
+      );
+      return [];
+    }
+
     const data = await res.json();
     return Array.isArray(data.record)
       ? data.record.filter(c => !c.init && c.email && c.refreshToken)
@@ -446,7 +459,7 @@ module.exports = async (req, res) => {
   let emailsSent = 0;
   let emailsFailed = 0;
 
-  const groq = new Groq({ apiKey: GROQ_API_KEY });
+  const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
   try {
     // 1. Load Candidates
