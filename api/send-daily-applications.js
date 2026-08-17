@@ -28,6 +28,29 @@ async function getLinkedInPosts() {
   } catch(e) { return []; }
 }
 
+// Without this, every unprocessed post gets re-attempted on every run
+// (hourly, via cron), so the handler's runtime grows unbounded until it
+// blows past the function's maxDuration and Vercel kills it mid-request.
+async function markPostProcessed(post) {
+  try {
+    const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
+    if (!LINKEDIN_BIN_ID) return;
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
+    });
+    const data = await res.json();
+    const posts = Array.isArray(data.record) ? data.record : [];
+    const updated = posts.map(p => p.addedAt === post.addedAt ? { ...p, processed: true } : p);
+    await fetch(`https://api.jsonbin.io/v3/b/${LINKEDIN_BIN_ID}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_MASTER_KEY },
+      body: JSON.stringify(updated)
+    });
+  } catch(e) {
+    console.log("Mark processed error:", e.message);
+  }
+}
+
 async function scrapeJobs() {
   try {
     const { execSync } = require("child_process");
@@ -60,7 +83,7 @@ try:
     print(json.dumps(filtered[:15]))
 except Exception as e:
     print(json.dumps([]))
-"`, { timeout: 120000 });
+"`, { timeout: 8000 });
     const jobs = JSON.parse(result.toString().trim());
     if (jobs.length > 0) {
       console.log(`✅ Scraped ${jobs.length} real jobs`);
@@ -342,6 +365,7 @@ module.exports = async (req, res) => {
         }
         if (!hrEmail) {
           console.log(`⏭ Skip LinkedIn post - no real person email`);
+          await markPostProcessed(post);
           continue;
         }
 
@@ -378,6 +402,7 @@ module.exports = async (req, res) => {
             console.log(`Error:`, e.message);
           }
         }
+        await markPostProcessed(post);
       } catch(e) {
         console.log("Post error:", e.message);
       }

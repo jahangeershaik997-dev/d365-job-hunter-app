@@ -745,28 +745,39 @@
       runNowBtn.addEventListener('click', async () => {
         const status = document.getElementById('runNowStatus');
         runNowBtn.disabled = true;
-        runNowBtn.innerHTML = '<span class="spinner"></span> Runningâ€¦';
-        if (status) status.textContent = 'This can take a minute or two â€” scraping jobs, finding HR contacts, writing and sending emails. Don\'t close this tab.';
+        runNowBtn.innerHTML = '<span class="spinner"></span> Running…';
+        if (status) status.textContent = 'This can take a minute or two — scraping jobs, finding HR contacts, writing and sending emails. Do not close this tab.';
         const runNowResults = document.getElementById('runNowResults');
         if (runNowResults) runNowResults.style.display = 'none';
 
         try {
-          const res = await fetch('/api/run-now', { method: 'POST' });
-          const data = await res.json();
+          const res = await fetch('/api/run-now', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+
+          const raw = await res.text();
+          let data;
+          try {
+            data = JSON.parse(raw);
+          } catch(parseErr) {
+            throw new Error('Server returned a non-JSON response: ' + raw.substring(0, 120));
+          }
 
           if (data.success) {
-            if (status) status.textContent = `âœ… Done! ${data.emailsSent || 0} emails sent across ${data.candidates || 0} candidates.`;
+            if (status) status.textContent = `✅ Done! ${data.emailsSent || 0} emails sent across ${data.candidates || 0} candidates.`;
             renderResults('runNowResults', data.results);
             setTimeout(() => location.reload(), 4000);
           } else {
-            if (status) status.textContent = 'âŒ ' + (data.error || data.message || 'Something went wrong');
+            if (status) status.textContent = '❌ ' + (data.error || data.message || 'Something went wrong');
           }
         } catch(e) {
-          if (status) status.textContent = 'âŒ Network error: ' + e.message;
+          if (status) status.textContent = '❌ ' + e.message;
         }
 
         runNowBtn.disabled = false;
-        runNowBtn.innerHTML = '<span>â–¶ï¸</span> <span>Run Scraper Now</span>';
+        runNowBtn.innerHTML = '<span>▶️</span> <span>Run Scraper Now</span>';
       });
     }
   </script>

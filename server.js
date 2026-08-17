@@ -95,6 +95,22 @@ app.get("/", async (req, res) => {
   res.render("index", { user: req.user, candidateCount: candidates.length, emailsSent });
 });
 
+app.get("/dashboard", async (req, res) => {
+  if (!req.user) return res.redirect("/");
+  const candidates = await getCandidates();
+  const me = candidates.find(c => c.email === req.user.email);
+  const posts = await getLinkedInPosts();
+  res.render("dashboard", {
+    user: req.user,
+    candidate: me,
+    candidates,
+    posts,
+    sheetUrl: process.env.GOOGLE_SHEET_ID
+      ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEET_ID}`
+      : "https://docs.google.com/spreadsheets/d/1DZpavtALZ0lyAPbeSEUbsfna3COIumHPWP_G-q8UziY"
+  });
+});
+
 app.get("/register", (req, res) => {
   res.render("register", { user: req.user, error: req.query.error || null });
 });
@@ -202,45 +218,6 @@ app.post("/register", upload.single("resume"), async (req, res) => {
   }
 });
 
-app.get("/dashboard", async (req, res) => {
-  if (!req.user) return res.redirect("/");
-  const candidates = await getCandidates();
-  const me = candidates.find(c => c.email === req.user.email);
-  const posts = await getLinkedInPosts();
-  res.render("dashboard", {
-    user: req.user,
-    candidate: me,
-    candidates,
-    posts,
-    sheetUrl: process.env.GOOGLE_SHEET_ID
-      ? `https://docs.google.com/spreadsheets/d/${process.env.GOOGLE_SHEET_ID}`
-      : "https://docs.google.com/spreadsheets/d/1DZpavtALZ0lyAPbeSEUbsfna3COIumHPWP_G-q8UziY"
-  });
-});
-
-// Post Job tab: parses a pasted post/image and instantly emails all candidates
-app.post("/linkedin/submit", async (req, res) => {
-  if (!req.user) return res.status(401).json({ error: "Not logged in" });
-  try {
-    const triggerHandler = require("./api/trigger-emails");
-    await triggerHandler(req, res);
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Dashboard "Run Now" button: manually triggers the scrape + apply job
-app.post("/api/run-now", async (req, res) => {
-  if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
-  try {
-    const handler = require("./api/send-daily-applications");
-    await handler(req, res);
-  } catch(e) {
-    console.log("Run now error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
 app.get("/auth/google", passport.authenticate("google", {
   scope: ["profile", "email", "https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/spreadsheets"],
   accessType: "offline",
@@ -309,18 +286,6 @@ app.get("/api/candidates", async (req, res) => {
   }
 });
 
-app.get("/api/session-check", (req, res) => {
-  res.json({
-    loggedIn: !!req.user,
-    user: req.user ? {
-      name: req.user.displayName,
-      email: req.user.email
-    } : null,
-    sessionId: req.sessionId ? req.sessionId.substring(0, 10) + "..." : null,
-    upstashConfigured: !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
-  });
-});
-
 app.get("/api/history", async (req, res) => {
   // Allow if logged in OR if called from same origin (the dashboard's own fetch)
   if (!req.user && !isSameOriginRequest(req)) {
@@ -333,6 +298,45 @@ app.get("/api/history", async (req, res) => {
   } catch(e) {
     console.log("History error:", e.message);
     res.json({ success: true, history: [] });
+  }
+});
+
+app.get("/api/session-check", (req, res) => {
+  res.json({
+    loggedIn: !!req.user,
+    user: req.user ? {
+      name: req.user.displayName,
+      email: req.user.email
+    } : null,
+    sessionId: req.sessionId ? req.sessionId.substring(0, 10) + "..." : null,
+    upstashConfigured: !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  });
+});
+
+// Dashboard "Run Now" button: manually triggers the scrape + apply job
+app.post("/api/run-now", async (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
+  try {
+    console.log("🚀 Manual scraper triggered by:", req.user.email);
+    const handler = require("./api/send-daily-applications");
+    await handler(req, res);
+  } catch(e) {
+    console.log("Run now error:", e.message);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  }
+});
+
+// Post Job tab: parses a pasted post/image and instantly emails all candidates
+app.post("/linkedin/submit", async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const triggerHandler = require("./api/trigger-emails");
+    await triggerHandler(req, res);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
