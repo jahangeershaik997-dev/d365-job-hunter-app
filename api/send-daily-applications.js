@@ -173,11 +173,29 @@ async function findRecruiterContact(job) {
       });
       clearTimeout(timeoutId);
 
-      if (res.ok) {
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => "");
+        console.log(
+          `Apollo HTTP error for ${job.company}: ${res.status} ${res.statusText} ${errorText.substring(0, 300)}`
+        );
+      } else {
         const data = await res.json();
-        for (const person of (data.people || [])) {
+        const people = data.people || [];
+
+        console.log(
+          `Apollo result for ${job.company}: ${people.length} people returned`
+        );
+
+        for (const person of people) {
+          console.log(
+            `Apollo person: ${person.first_name || ""} ${person.last_name || ""} | email=${person.email ? "YES" : "NO"}`
+          );
+
           if (person.email && isRealPersonEmail(person.email)) {
-            console.log(`✅ Apollo found verified contact: ${person.first_name || ""} (${person.email}) at ${job.company}`);
+            console.log(
+              `Apollo accepted contact: ${person.first_name || ""} (${person.email}) at ${job.company}`
+            );
+
             return {
               email: person.email,
               name: person.first_name || null,
