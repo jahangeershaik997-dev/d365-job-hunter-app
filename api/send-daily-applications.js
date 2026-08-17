@@ -42,9 +42,19 @@ async function getCandidates() {
     }
 
     const data = await res.json();
-    return Array.isArray(data.record)
-      ? data.record.filter(c => !c.init && c.email && c.refreshToken)
-      : [];
+    const records = Array.isArray(data.record) ? data.record : [];
+
+    console.log(`JSONBin candidates HTTP: ${res.status}`);
+    console.log(`JSONBin total records: ${records.length}`);
+    console.log(`JSONBin records with email: ${records.filter(c => !!c.email).length}`);
+    console.log(`JSONBin records with refreshToken: ${records.filter(c => !!c.refreshToken).length}`);
+    console.log(
+      `JSONBin valid candidates: ${
+        records.filter(c => !c.init && c.email && c.refreshToken).length
+      }`
+    );
+
+    return records.filter(c => !c.init && c.email && c.refreshToken);
   } catch (e) {
     console.log("Candidates fetch error:", e.message);
     return [];
