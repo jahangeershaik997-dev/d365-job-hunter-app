@@ -1,34 +1,74 @@
 const { resolveUser } = require("../middleware/auth");
 
-const JSONBIN_BIN_ID = "6a7fe014f5f4af5e29189def";
-const JSONBIN_MASTER_KEY = "$2a$10$mOTOfSBdMCPsMoeb7FIaVubVgsRJqsgyheEbJc2nZ6aZ5p3cKzVJa";
+const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
+const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY;
 
-// Allow if logged in OR if called from same origin (the dashboard's own fetch)
-function isSameOriginRequest(req) {
-  const host = req.headers.host;
-  const from = req.headers.origin || req.headers.referer || "";
-  return !!(host && from && from.includes(host));
-}
-
-// Vercel routes /api/* to a matching file BEFORE it ever reaches server.js's
-// Express app - a route defined only inside server.js under an /api/ path
-// is unreachable in production. This file (not server.js) is what actually
-// serves GET /api/candidates.
 module.exports = async (req, res) => {
-  const { user } = await resolveUser(req);
-  if (!user && !isSameOriginRequest(req)) {
-    return res.status(401).json({ success: false, error: "Not logged in" });
-  }
   try {
+    // Require a valid authenticated session.
+    const resolved = await resolveUser(req);
+    const user = resolved?.user || null;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "Not logged in"
+      });
+    }
+
+    if (!JSONBIN_BIN_ID || !JSONBIN_MASTER_KEY) {
+      console.error("JSONBin environment variables are missing");
+      return res.status(500).json({
+        success: false,
+        error: "Candidate storage is not configured"
+      });
+    }
+
     const resBin = await fetch(
-      `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_BIN_ID || JSONBIN_BIN_ID}/latest`,
-      { headers: { "X-Master-Key": process.env.JSONBIN_MASTER_KEY || JSONBIN_MASTER_KEY } }
+      `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`,
+      {
+        headers: {
+          "X-Master-Key": JSONBIN_MASTER_KEY
+        }
+      }
     );
+
+    if (!resBin.ok) {
+      const errorText = await resBin.text().catch(() => "");
+
+      console.error(
+        `Candidates JSONBin error: HTTP ${resBin.status} ${resBin.statusText} ${errorText.substring(0, 300)}`
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: "Failed to fetch candidates"
+      });
+    }
+
     const data = await resBin.json();
-    const candidates = Array.isArray(data.record)
-      ? data.record.filter(c => !c.init && c.email && c.name)
-      : [];
-    res.json({
+    const records = Array.isArray(data.record) ? data.record : [];
+
+    // Support both OAuth token formats used by the application.
+    const candidates = records
+      .filter(c => !c.init && c.email && c.name)
+      .map(c => {
+        const refreshToken =
+          c.refreshToken ||
+          c.tokens?.refresh_token ||
+          null;
+
+        return {
+          ...c,
+          refreshToken
+        };
+      })
+      .filter(c => !!c.refreshToken);
+
+    console.log(`Candidates endpoint: ${candidates.length} valid candidates`);
+
+    // Never expose OAuth tokens to the browser.
+    return res.json({
       success: true,
       candidates: candidates.map(c => ({
         id: c.id,
@@ -39,8 +79,21 @@ module.exports = async (req, res) => {
         registeredAt: c.registeredAt
       }))
     });
-  } catch(e) {
-    console.log("Candidates error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
+
+  } catch (e) {
+    console.error("Candidates endpoint error:", e.message);
+
+    if (e.message?.toLowerCase().includes("session") ||
+        e.message?.toLowerCase().includes("redis")) {
+      return res.status(401).json({
+        success: false,
+        error: "Session unavailable. Please log in again."
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: "Unable to load candidates"
+    });
   }
 };
