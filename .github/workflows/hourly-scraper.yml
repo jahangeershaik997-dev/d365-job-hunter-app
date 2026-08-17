@@ -10,7 +10,10 @@ jobs:
     steps:
       - name: Trigger D365 Job Hunter
         run: |
-          curl -X POST https://d365-job-hunter-app.vercel.app/api/run-now \
-          -H "Content-Type: application/json" \
-          -d '{}' \
-          --max-time 60
+          response=$(curl -s -X POST \
+            https://d365-job-hunter-app.vercel.app/api/run-now \
+            -H "Content-Type: application/json" \
+            -H "x-run-now-secret: d365secret2026" \
+            -d '{}' \
+            --max-time 55)
+          echo "Response: $response"
