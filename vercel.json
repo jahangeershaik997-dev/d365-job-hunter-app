@@ -1,15 +1,12 @@
 {
-  "crons": [
-    {
-      "path": "/api/send-daily-applications",
-      "schedule": "0 * * * *"
-    }
-  ],
   "functions": {
     "api/send-daily-applications.js": {
       "maxDuration": 60
     },
     "api/trigger-emails.js": {
+      "maxDuration": 60
+    },
+    "api/run-now.js": {
       "maxDuration": 60
     }
   }
