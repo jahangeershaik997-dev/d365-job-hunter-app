@@ -6,7 +6,6 @@ const multer = require("multer");
 const Groq = require("groq-sdk");
 const { createSession, destroySession, COOKIE_NAME } = require("./lib/session");
 const { loadSession } = require("./middleware/auth");
-const { getApplicationHistory } = require("./lib/history");
 
 const app = express();
 
@@ -77,15 +76,6 @@ async function getLinkedInPosts() {
   } catch(e) {
     return [];
   }
-}
-
-// Lets the dashboard's own client-side fetch() calls through even if the
-// session cookie somehow isn't attached, without opening these routes to
-// arbitrary outside requests (which don't carry a matching Origin/Referer).
-function isSameOriginRequest(req) {
-  const host = req.headers.host;
-  const from = req.headers.origin || req.headers.referer || "";
-  return !!(host && from && from.includes(host));
 }
 
 app.get("/", async (req, res) => {
@@ -255,79 +245,13 @@ app.get("/logout", async (req, res) => {
   res.redirect("/");
 });
 
-app.get("/api/candidates", async (req, res) => {
-  // Allow if logged in OR if called from same origin (the dashboard's own fetch)
-  if (!req.user && !isSameOriginRequest(req)) {
-    return res.status(401).json({ success: false, error: "Not logged in" });
-  }
-  try {
-    const resBin = await fetch(
-      `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_BIN_ID || JSONBIN_BIN_ID}/latest`,
-      { headers: { "X-Master-Key": process.env.JSONBIN_MASTER_KEY || JSONBIN_MASTER_KEY } }
-    );
-    const data = await resBin.json();
-    const candidates = Array.isArray(data.record)
-      ? data.record.filter(c => !c.init && c.email && c.name)
-      : [];
-    res.json({
-      success: true,
-      candidates: candidates.map(c => ({
-        id: c.id,
-        name: c.name,
-        email: c.email,
-        experience: c.experience,
-        role: c.role,
-        registeredAt: c.registeredAt
-      }))
-    });
-  } catch(e) {
-    console.log("Candidates error:", e.message);
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-app.get("/api/history", async (req, res) => {
-  // Allow if logged in OR if called from same origin (the dashboard's own fetch)
-  if (!req.user && !isSameOriginRequest(req)) {
-    return res.status(401).json({ success: false, error: "Not logged in" });
-  }
-  try {
-    const { getApplicationHistory } = require("./lib/history");
-    const history = await getApplicationHistory();
-    res.json({ success: true, history: history || [] });
-  } catch(e) {
-    console.log("History error:", e.message);
-    res.json({ success: true, history: [] });
-  }
-});
-
-app.get("/api/session-check", (req, res) => {
-  res.json({
-    loggedIn: !!req.user,
-    user: req.user ? {
-      name: req.user.displayName,
-      email: req.user.email
-    } : null,
-    sessionId: req.sessionId ? req.sessionId.substring(0, 10) + "..." : null,
-    upstashConfigured: !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
-  });
-});
-
-// Dashboard "Run Now" button: manually triggers the scrape + apply job
-app.post("/api/run-now", async (req, res) => {
-  res.setHeader("Content-Type", "application/json");
-  if (!req.user) return res.status(401).json({ success: false, error: "Not logged in" });
-  try {
-    console.log("🚀 Manual scraper triggered by:", req.user.email);
-    const handler = require("./api/send-daily-applications");
-    await handler(req, res);
-  } catch(e) {
-    console.log("Run now error:", e.message);
-    if (!res.headersSent) {
-      res.status(500).json({ success: false, error: e.message });
-    }
-  }
-});
+// /api/candidates, /api/history, /api/session-check, /api/run-now are NOT
+// defined here. On Vercel, any request under /api/* is routed to a matching
+// file in the api/ directory BEFORE it ever reaches this Express app - a
+// route registered only inside server.js under an /api/ path is unreachable
+// in production, no matter what it does. Those four now live as their own
+// files: api/candidates.js, api/history.js, api/session-check.js,
+// api/run-now.js. Do not re-add them here.
 
 // Post Job tab: parses a pasted post/image and instantly emails all candidates
 app.post("/linkedin/submit", async (req, res) => {

@@ -51,18 +51,32 @@ function isRealPersonEmail(email) {
 }
 
 async function parseJobPost(text, groq) {
-  const prompt = `Extract job details from this post. Return ONLY valid JSON:
+  const prompt = `Extract job details from this recruiter post.
+Return ONLY valid JSON with no explanation.
 
-"${text.substring(0, 600)}"
+POST TEXT:
+"${text.substring(0, 800)}"
 
+IMPORTANT EXTRACTION RULES:
+- company: Look for company name mentioned anywhere in the post
+  Check for: "at [Company]", "for [Company]", company signature,
+  email domain (e.g. rajkiran@burgeonits.com = Burgeon IT Services),
+  website URL (www.burgeonits.com = Burgeon IT Services)
+  NEVER return "Company" as the value - always find the real name
+- title: exact job title from the post
+- location: city or country mentioned
+- recruiterName: first name of recruiter if mentioned
+- recruiterEmail: email address if mentioned in post
+- skills: technical skills listed
+
+Return:
 {
   "title": "exact job title",
-  "company": "company name",
-  "location": "city or India",
-  "recruiterName": "first name only if mentioned else null",
-  "recruiterEmail": "email if mentioned else null",
-  "skills": ["skill1", "skill2", "skill3"],
-  "experience": "years required"
+  "company": "real company name - never use generic Company",
+  "location": "city/country or India",
+  "recruiterName": "first name only or null",
+  "recruiterEmail": "email@domain.com or null",
+  "skills": ["skill1", "skill2", "skill3"]
 }`;
 
   const response = await groq.chat.completions.create({
@@ -74,36 +88,96 @@ async function parseJobPost(text, groq) {
   try {
     const t = response.choices[0].message.content;
     const json = t.match(/\{[\s\S]*\}/)?.[0];
-    return json ? JSON.parse(json) : null;
+    if (!json) return null;
+    const jobDetails = JSON.parse(json);
+
+    // Auto-detect email from post text if Groq missed it
+    if (!jobDetails.recruiterEmail) {
+      const emailRegex = /[\w.+-]+@[\w-]+\.[\w.]+/g;
+      const emailsFound = text.match(emailRegex);
+      if (emailsFound) {
+        for (const foundEmail of emailsFound) {
+          if (isRealPersonEmail(foundEmail)) {
+            jobDetails.recruiterEmail = foundEmail;
+            console.log("Auto-detected email:", foundEmail);
+            break;
+          }
+        }
+      }
+    }
+
+    // Also auto-detect company from email domain if missing
+    if (!jobDetails.company || jobDetails.company === "Company") {
+      if (jobDetails.recruiterEmail) {
+        const domain = jobDetails.recruiterEmail.split("@")[1];
+        const companyFromDomain = domain
+          .replace(/\.(com|in|io|co|net|org)$/, "")
+          .replace(/its$/, " IT Services")
+          .replace(/tech$/, " Technologies")
+          .replace(/-/g, " ");
+        jobDetails.company = companyFromDomain
+          .split(" ")
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
+        console.log("Company from domain:", jobDetails.company);
+      }
+    }
+
+    return jobDetails;
   } catch(e) { return null; }
 }
 
 async function parseImagePost(imageBase64, groq) {
   try {
+    // NOTE: llama-3.3-70b-versatile is a text-only Groq model. If it doesn't
+    // accept image_url content at all, this will keep failing with the same
+    // "string did not match the expected pattern" error - swap in whichever
+    // vision-capable model is current in your Groq console (their vision
+    // model names/availability have moved around, so no name is hardcoded
+    // here without being able to verify it against Groq's live catalog).
     const response = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{
         role: "user",
         content: [
-          { type: "image_url", image_url: { url: imageBase64 } },
-          { type: "text", text: `Extract job details from this image. Return ONLY valid JSON:
+          {
+            type: "image_url",
+            image_url: {
+              url: imageBase64,
+              detail: "high"
+            }
+          },
+          {
+            type: "text",
+            text: `Extract job details from this image of a job posting.
+Look carefully at all text in the image.
+Return ONLY valid JSON:
 {
-  "title": "job title",
-  "company": "company name",
-  "location": "location",
-  "recruiterName": "name if visible else null",
-  "recruiterEmail": "email if visible else null",
-  "skills": ["skill1", "skill2", "skill3"],
-  "experience": "years required"
-}` }
+  "title": "job title from image",
+  "company": "company name from image - check email domains and logos",
+  "location": "location from image",
+  "recruiterName": "recruiter first name if visible",
+  "recruiterEmail": "email address if visible in image",
+  "skills": ["skill1", "skill2", "skill3"]
+}`
+          }
         ]
       }],
-      max_tokens: 300
+      max_tokens: 500
     });
-    const t = response.choices[0].message.content;
-    const json = t.match(/\{[\s\S]*\}/)?.[0];
-    return json ? JSON.parse(json) : null;
-  } catch(e) { return null; }
+
+    const text = response.choices[0].message.content;
+    const json = text.match(/\{[\s\S]*\}/)?.[0];
+    if (json) {
+      const parsed = JSON.parse(json);
+      console.log("Image parsed:", JSON.stringify(parsed));
+      return parsed;
+    }
+    return null;
+  } catch(e) {
+    console.log("Image parse error:", e.message);
+    return null;
+  }
 }
 
 // ============================================================

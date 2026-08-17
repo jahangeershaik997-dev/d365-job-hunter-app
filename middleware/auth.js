@@ -13,21 +13,29 @@ function parseCookies(req) {
   return cookies;
 }
 
-async function loadSession(req, res, next) {
+// Framework-independent: works with Express req AND bare Vercel function
+// req objects, since both only need req.headers.cookie. Used by loadSession
+// (Express middleware) and by the standalone api/*.js functions that Vercel
+// routes directly (those never go through server.js's middleware chain).
+async function resolveUser(req) {
   try {
     const cookies = parseCookies(req);
     const sessionId = cookies[COOKIE_NAME];
-    if (!sessionId) { req.user = null; return next(); }
+    if (!sessionId) return { user: null, sessionId: null };
     const session = await getSession(sessionId);
-    if (!session) { req.user = null; return next(); }
-    req.sessionId = sessionId;
-    req.user = session;
-    next();
+    if (!session) return { user: null, sessionId: null };
+    return { user: session, sessionId };
   } catch(e) {
     console.log("Session error:", e.message);
-    req.user = null;
-    next();
+    return { user: null, sessionId: null };
   }
+}
+
+async function loadSession(req, res, next) {
+  const { user, sessionId } = await resolveUser(req);
+  req.user = user;
+  req.sessionId = sessionId;
+  next();
 }
 
 function requireAuth(req, res, next) {
@@ -35,4 +43,4 @@ function requireAuth(req, res, next) {
   next();
 }
 
-module.exports = { loadSession, requireAuth };
+module.exports = { loadSession, requireAuth, resolveUser };
