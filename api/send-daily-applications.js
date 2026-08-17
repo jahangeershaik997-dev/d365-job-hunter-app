@@ -123,11 +123,25 @@ function isRealPersonEmail(email) {
   return false;
 }
 
+const recruiterContactCache = new Map();
+
 /**
  * Searches for legitimate recruiter / talent acquisition email
  * Never invents or guesses generic email addresses.
  */
 async function findRecruiterContact(job) {
+  const companyKey = (job.company || "").trim().toLowerCase();
+
+  if (companyKey && recruiterContactCache.has(companyKey)) {
+    const cached = recruiterContactCache.get(companyKey);
+
+    if (cached === null) {
+      return null;
+    }
+
+    return cached;
+  }
+
   // 1. Check description text for an explicit recruiter email
   if (job.description) {
     const emailRegex = /[\w.+-]+@[\w-]+\.[\w.]+/g;
@@ -136,7 +150,11 @@ async function findRecruiterContact(job) {
       for (const email of matches) {
         if (isRealPersonEmail(email)) {
           console.log(`✅ Extracted verified recruiter email from job text: ${email}`);
-          return { email, name: null, source: "Job Listing" };
+          const contact = { email, name: null, source: "Job Listing" };
+          if (companyKey) {
+            recruiterContactCache.set(companyKey, contact);
+          }
+          return contact;
         }
       }
     }
@@ -196,17 +214,24 @@ async function findRecruiterContact(job) {
               `Apollo accepted contact: ${person.first_name || ""} (${person.email}) at ${job.company}`
             );
 
-            return {
+            const contact = {
               email: person.email,
               name: person.first_name || null,
               source: "Apollo"
             };
+
+            recruiterContactCache.set(companyKey, contact);
+            return contact;
           }
         }
       }
     } catch (e) {
       console.log(`Apollo search error for ${job.company}:`, e.message);
     }
+  }
+
+  if (companyKey) {
+    recruiterContactCache.set(companyKey, null);
   }
 
   return null;
