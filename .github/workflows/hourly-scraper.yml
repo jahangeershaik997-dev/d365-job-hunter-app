@@ -1,0 +1,16 @@
+﻿name: Hourly D365 Job Scraper
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  trigger-scraper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger D365 Job Hunter
+        run: |
+          curl -X POST https://d365-job-hunter-app.vercel.app/api/run-now \
+          -H "Content-Type: application/json" \
+          -d '{}' \
+          --max-time 60
