@@ -7,6 +7,7 @@ const { alreadySent, markAsSent } = require("../lib/sent-tracker");
 const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
 const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const SHEET_REFRESH_TOKEN = process.env.SHEET_REFRESH_TOKEN;
 const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
@@ -80,7 +81,7 @@ Return:
 }`;
 
   const response = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: GROQ_MODEL,
     messages: [{ role: "user", content: prompt }],
     max_tokens: 300
   });
@@ -136,7 +137,7 @@ async function parseImagePost(imageBase64, groq) {
     // model names/availability have moved around, so no name is hardcoded
     // here without being able to verify it against Groq's live catalog).
     const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: GROQ_MODEL,
       messages: [{
         role: "user",
         content: [
@@ -267,7 +268,7 @@ Best regards,
 ${candidate.name}`;
 
   const response = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: GROQ_MODEL,
     messages: [{ role: "user", content: prompt }],
     max_tokens: 600
   });

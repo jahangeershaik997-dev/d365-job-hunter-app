@@ -2,7 +2,10 @@ const Groq = require("groq-sdk");
 const { put } = require("@vercel/blob");
 const PDFDocument = require("pdfkit");
 
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+
 async function tailorResumeText(candidate, job) {
+  if (!process.env.GROQ_API_KEY) return null;
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   const prompt = `You are an expert resume writer.
@@ -45,7 +48,7 @@ Return ONLY valid JSON no explanation:
 }`;
 
   const response = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: GROQ_MODEL,
     messages: [{ role: "user", content: prompt }],
     max_tokens: 2000
   });

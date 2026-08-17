@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const passport = require("passport");
@@ -9,9 +10,10 @@ const { loadSession } = require("./middleware/auth");
 
 const app = express();
 
-const JSONBIN_BIN_ID = "6a7fe014f5f4af5e29189def";
-const JSONBIN_MASTER_KEY = "$2a$10$mOTOfSBdMCPsMoeb7FIaVubVgsRJqsgyheEbJc2nZ6aZ5p3cKzVJa";
+const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID || "6a7fe014f5f4af5e29189def";
+const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY || "$2a$10$mOTOfSBdMCPsMoeb7FIaVubVgsRJqsgyheEbJc2nZ6aZ5p3cKzVJa";
 const LINKEDIN_BIN_ID = process.env.LINKEDIN_BIN_ID;
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -148,7 +150,7 @@ app.post("/register", upload.single("resume"), async (req, res) => {
       try {
         const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
         const response = await groq.chat.completions.create({
-          model: "llama-3.3-70b-versatile",
+          model: GROQ_MODEL,
           messages: [{
             role: "user",
             content: `Extract details from this resume. Return ONLY valid JSON with no explanation:
