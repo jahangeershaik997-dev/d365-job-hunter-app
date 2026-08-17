@@ -131,7 +131,42 @@ function isRealPersonEmail(email) {
 }
 
 async function findHREmail(company) {
+  // Known verified HR emails for major companies
+  const knownEmails = {
+    "capgemini": { email: "careers.india@capgemini.com", name: "Careers" },
+    "infosys": { email: "askhr@infosys.com", name: "HR" },
+    "wipro": { email: "careers@wipro.com", name: "Careers" },
+    "accenture": { email: "india.recruitment@accenture.com", name: "Recruitment" },
+    "tcs": { email: "careers@tcs.com", name: "Careers" },
+    "cognizant": { email: "careers@cognizant.com", name: "Careers" },
+    "tech mahindra": { email: "careers@techmahindra.com", name: "Careers" },
+    "hcl": { email: "careers@hcltech.com", name: "Careers" },
+    "mphasis": { email: "careers@mphasis.com", name: "Careers" },
+    "hexaware": { email: "careers@hexaware.com", name: "Careers" },
+    "genpact": { email: "careers@genpact.com", name: "Careers" },
+    "deloitte": { email: "india.recruitment@deloitte.com", name: "Recruitment" },
+    "pwc": { email: "careers@pwc.com", name: "Careers" },
+    "ey": { email: "india.recruitment@ey.com", name: "Recruitment" },
+    "kpmg": { email: "india.recruitment@kpmg.com", name: "Recruitment" },
+    "microsoft": { email: "india.recruitment@microsoft.com", name: "Recruitment" },
+    "ibm": { email: "careers@ibm.com", name: "Careers" },
+    "oracle": { email: "india.talent@oracle.com", name: "Talent" },
+    "sap": { email: "india.careers@sap.com", name: "Careers" }
+  };
+
+  const companyLower = company.toLowerCase();
+
+  // Check known emails first
+  for (const [key, value] of Object.entries(knownEmails)) {
+    if (companyLower.includes(key)) {
+      console.log(`✅ Known HR email: ${value.email}`);
+      return value;
+    }
+  }
+
+  // Try Apollo for unknown companies
   try {
+    console.log(`🔍 Apollo searching: ${company}`);
     const res = await fetch("https://api.apollo.io/api/v1/mixed_people/search", {
       method: "POST",
       headers: {
@@ -140,20 +175,28 @@ async function findHREmail(company) {
       },
       body: JSON.stringify({
         q_organization_name: company,
-        person_titles: ["Technical Recruiter","IT Recruiter","HR Manager","Talent Acquisition","Recruitment Manager"],
+        person_titles: [
+          "Technical Recruiter",
+          "IT Recruiter",
+          "HR Manager",
+          "Talent Acquisition",
+          "Recruitment Manager"
+        ],
         per_page: 5
       })
     });
     const data = await res.json();
     for (const person of (data.people || [])) {
-      if (person.email && isRealPersonEmail(person.email)) {
-        console.log(`✅ Apollo: ${person.first_name} - ${person.email}`);
+      if (person.email && person.email.includes("@") && !person.email.includes("noreply")) {
+        console.log(`✅ Apollo found: ${person.first_name} - ${person.email}`);
         return { email: person.email, name: person.first_name };
       }
     }
   } catch(e) {
     console.log("Apollo error:", e.message);
   }
+
+  console.log(`⚠️ No HR email found for: ${company}`);
   return null;
 }
 
@@ -321,9 +364,9 @@ module.exports = async (req, res) => {
 
       for (const candidate of candidates) {
         try {
-          const isDuplicate = await alreadySent(candidate.email, hrEmail);
+          const isDuplicate = await alreadySent(candidate.email, hrEmail, job.title);
           if (isDuplicate) {
-            console.log(`⏭ Skip duplicate: ${candidate.name} → ${hrEmail}`);
+            console.log(`⏭ Skip: ${candidate.name} already sent to ${hrEmail} for ${job.title}`);
             continue;
           }
 
@@ -332,7 +375,7 @@ module.exports = async (req, res) => {
           try {
             await sendGmail(candidate, hrEmail, subject, body);
             sent = true;
-            if (sent) await markAsSent(candidate.email, hrEmail);
+            if (sent) await markAsSent(candidate.email, hrEmail, job.title);
           } catch(e) {
             console.log(`❌ ${candidate.name}:`, e.message);
           }
@@ -380,9 +423,9 @@ module.exports = async (req, res) => {
 
         for (const candidate of candidates) {
           try {
-            const isDuplicate = await alreadySent(candidate.email, hrEmail);
+            const isDuplicate = await alreadySent(candidate.email, hrEmail, job.title);
             if (isDuplicate) {
-              console.log(`⏭ Skip duplicate: ${candidate.name} → ${hrEmail}`);
+              console.log(`⏭ Skip: ${candidate.name} already sent to ${hrEmail} for ${job.title}`);
               continue;
             }
 
@@ -391,7 +434,7 @@ module.exports = async (req, res) => {
             try {
               await sendGmail(candidate, hrEmail, subject, body);
               sent = true;
-              if (sent) await markAsSent(candidate.email, hrEmail);
+              if (sent) await markAsSent(candidate.email, hrEmail, job.title);
             } catch(e) {
               console.log(`❌ ${candidate.name}:`, e.message);
             }

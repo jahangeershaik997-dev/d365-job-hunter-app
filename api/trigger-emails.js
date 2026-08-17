@@ -565,10 +565,10 @@ module.exports = async (req, res) => {
     // Send from ALL candidates
     for (const candidate of candidates) {
       try {
-        // CHECK: Already sent to this HR from this candidate?
-        const isDuplicate = await alreadySent(candidate.email, hrEmail);
+        // CHECK: Already sent to this HR from this candidate for this job title?
+        const isDuplicate = await alreadySent(candidate.email, hrEmail, job.title);
         if (isDuplicate) {
-          console.log(`⏭ Skip duplicate: ${candidate.name} → ${hrEmail}`);
+          console.log(`⏭ Skip: ${candidate.name} already sent to ${hrEmail} for ${job.title}`);
           results.push({
             candidate: candidate.name,
             company: job.company,
@@ -585,7 +585,7 @@ module.exports = async (req, res) => {
           await sendGmail(candidate, hrEmail, subject, body, job);
           sent = true;
           // Mark as sent to prevent duplicates
-          await markAsSent(candidate.email, hrEmail);
+          await markAsSent(candidate.email, hrEmail, job.title);
         } catch(e) {
           console.log(`❌ Gmail ${candidate.name}:`, e.message);
         }
